@@ -1,0 +1,7 @@
+.ICRAR_Venv/
+config
+dataset_DPIRD_utc0/
+2024/
+dataset_DPIRD_utc0.tar.gz
+ecmwf_era5.tar.gz
+
