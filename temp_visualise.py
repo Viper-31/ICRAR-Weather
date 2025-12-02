@@ -3,8 +3,20 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 
 # Open dataset
-ds = xr.open_dataset("2024/12/data_stream-oper_stepType-instant.nc", engine="h5netcdf")
-t2m = ds['t2m']  # (valid_time, lat, lon)
+ds = xr.open_dataset("2024/12/single_data_stream-oper_stepType-accum.nc", engine="h5netcdf")
+print(ds)
+print("-"*160)
+
+# Open dataset
+ds = xr.open_dataset("2024/12/single_data_stream-oper_stepType-instant.nc", engine="h5netcdf")
+tcc = ds['tcc']  # (valid_time, lat, lon)
+
+print(ds)
+print("-"*160)
+print(ds['tcc'].min(), ds['tcc'].max())
+print("-"*160)
+print(ds.isnull().sum())
+
 
 # Start at first timestep
 current = 0
@@ -14,12 +26,12 @@ fig, ax = plt.subplots(figsize=(8,6), subplot_kw={'projection': ccrs.PlateCarree
 
 # Plot first timestep with pcolormesh
 img = ax.pcolormesh(
-    ds['longitude'], ds['latitude'], t2m.isel(valid_time=current),
+    ds['longitude'], ds['latitude'], tcc.isel(valid_time=current),
     cmap='coolwarm', shading='auto'
 )
 ax.set_title(str(ds.valid_time[current].values))
 ax.coastlines()
-plt.colorbar(img, ax=ax, label='Temperature (K)')
+plt.colorbar(img, ax=ax, label='Total Cloud Cover')
 plt.ion()
 plt.show()
 
@@ -34,7 +46,7 @@ def on_key(event):
         return
 
     # Update the existing image data
-    img.set_array(t2m.isel(valid_time=current).values.ravel())
+    img.set_array(tcc.isel(valid_time=current).values.ravel())
     ax.set_title(str(ds.valid_time[current].values))
     fig.canvas.draw_idle()  # redraw the figure
 
