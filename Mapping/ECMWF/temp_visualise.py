@@ -1,9 +1,16 @@
+"""
+This script visualizes ECMWF temperature data on a map. It includes functionality to save grid coordinates to a CSV file.
+"""
+
 import xarray as xr
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+import matplotlib.dates as mdates
+from datetime import timedelta
+
 
 # ---------------------------------------------------------
 # FUNCTION 1 — Save ECMWF grid to CSV
@@ -79,13 +86,18 @@ def plot_points_from_csv(csv_path):
 # MAIN
 # ---------------------------------------------------------
 if __name__ == "__main__":
-    nc_file = "../../2024/12/single_data_stream-oper_stepType-instant.nc"
+    nc_file = "../../1_ECMWF/12/single_data_stream-oper_stepType-instant.nc"
 
     # Save grid points to CSV
     df_grid = save_ecmwf_grid_to_csv(nc_file, "ecmwf_grid_coords.csv")
 
-    # Plot grid points on map
-    plot_points_from_csv("ecmwf_grid_coords.csv")
+    # # Plot grid points on map
+    # plot_points_from_csv("ecmwf_grid_coords.csv")
 
-    # Interactive variable plot (arrow keys)
-    interactive_plot(nc_file, varname="t2m")
+    # # Interactive variable plot (arrow keys)
+    # interactive_plot(nc_file, varname="t2m")
+
+    # Print Edges of all points
+    print("Lat min/max:", df_grid["lat"].min(), df_grid["lat"].max())
+    print("Lon min/max:", df_grid["lon"].min(), df_grid["lon"].max())
+

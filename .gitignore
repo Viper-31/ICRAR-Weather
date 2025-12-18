@@ -1,8 +1,9 @@
 .ICRAR_Venv/
 config*
-dataset_DPIRD_utc0/
-2024/
+2_DPIRD_dup/
+2_DPIRD/
+1_ECMWF/
 *dataset*
 ecmwf_era5.tar.gz
 *.vscode
-
+Mapping/DPIRD/DPIRD_stations_combined.nc
