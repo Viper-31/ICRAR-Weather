@@ -11,7 +11,7 @@ import pytz
 # --- Constants ---
 # Base directory where combined year folders are located.
 BASE_DIR = '../../2_DPIRD_dup/' 
-TEST_DIR = '../../2_DPIRD_dup/Final_stations_combined_final/' 
+FINAL_DIR = '../../2_DPIRD_dup/Final_stations_combined_final/' 
 INPUT_DIR = Path(BASE_DIR) / "Final_stations_combined_final"
 
 PERTH_TZ = pytz.timezone("Australia/Perth")
@@ -56,7 +56,7 @@ def filter_non_DPIRD(station_list, DPIRD_stations):
             print(f"Will delete {station}{file_extension} file")
             # a = input("Press Enter to continue...")
             #delete station file
-            os.remove(f"{TEST_DIR}/{station}{file_extension}")
+            os.remove(f"{FINAL_DIR}/{station}{file_extension}")
 
 def uncompress_file(folder_path):
     # if file extension is .gz, uncompress it
@@ -73,6 +73,21 @@ def uncompress_file(folder_path):
             os.remove(file_path)  # remove the .gz file after uncompressing
 
     return True
+
+def check_and_remove_duplicates():
+    for csv_file in FINAL_DIR.glob("*.csv"):
+        df = pd.read_csv(csv_file, parse_dates=["time"])
+    
+        # Detect duplicates and keep only the first occurrence
+        before_count = len(df)
+        df_cleaned = df.drop_duplicates(subset=["time"], keep="first")
+        after_count = len(df_cleaned)
+        
+        if before_count != after_count:
+            print(f"Removed {before_count - after_count} duplicate rows from {csv_file.name}")
+            # Overwrite CSV with cleaned data
+            df_cleaned.to_csv(csv_file, index=False)
+
 
 # ------------------ Main processing and cleaning ------------------ #
 def consolidate_monthly_data(month_dirs, year):
@@ -224,7 +239,7 @@ if __name__ == "__main__":
 
     # ------------------ Uncompress files ------------------ #
     # print("Starting uncompression of files in test directory...")
-    # uncompress_file(TEST_DIR)
+    # uncompress_file(FINAL_DIR)
     # print("Uncompressed all files in test directory.")
 
 
@@ -243,9 +258,9 @@ if __name__ == "__main__":
 
     # ------------------ Get list of station files ------------------ #
     print("Getting list of station files in test directory...")
-    print(TEST_DIR)
+    print(FINAL_DIR)
     a = input("Press Enter to continue...")
-    station_list = sorted(get_file_names(Path(TEST_DIR), resolution='o'))
+    station_list = sorted(get_file_names(Path(FINAL_DIR), resolution='o'))
 
     # ------------------ Cleaning DPIRD stations ------------------ #
     print("Starting filtering of non-DPIRD stations...")
@@ -261,3 +276,7 @@ if __name__ == "__main__":
     # ------------------ Shift Time ----------------- #
     print("Starting time shifting and timezone conversion...")
     shift_time_and_convert()
+
+    # ------------------ Check Duplicates ----------------- #
+    print("Starting duplicate entry check and removal...")
+    check_and_remove_duplicates(FINAL_DIR)

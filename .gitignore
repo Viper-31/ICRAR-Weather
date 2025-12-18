@@ -6,6 +6,6 @@ config*
 *dataset*
 ecmwf_era5.tar.gz
 *.vscode
-Mapping/DPIRD/DPIRD_stations_combined.nc
-Mapping/DPIRD/DPIRD_stations_combined_refined.nc
+Mapping/DPIRD/xarray/DPIRD_final.nc
+Mapping/DPIRD/xarray/DPIRD_final_duplicate.nc
 .DS_Store

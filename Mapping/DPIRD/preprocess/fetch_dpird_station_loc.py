@@ -5,7 +5,7 @@ This script fetches station locations from the DPIRD API and saves them to a CSV
 import requests
 import csv
 
-API_KEY = "<YOUR_API_KEY>"
+API_KEY = ""
 STATION_FILE = "dpird_stations.txt"
 OUTPUT_CSV = "dpird_station_locations.csv"
 
