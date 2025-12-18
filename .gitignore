@@ -7,3 +7,5 @@ config*
 ecmwf_era5.tar.gz
 *.vscode
 Mapping/DPIRD/DPIRD_stations_combined.nc
+Mapping/DPIRD/DPIRD_stations_combined_refined.nc
+.DS_Store
