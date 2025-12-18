@@ -4,8 +4,7 @@ config*
 2_DPIRD/
 1_ECMWF/
 *dataset*
-ecmwf_era5.tar.gz
+*.tar.gz
 *.vscode
-Mapping/DPIRD/xarray/DPIRD_final.nc
-Mapping/DPIRD/xarray/DPIRD_final_duplicate.nc
+*.nc
 .DS_Store
