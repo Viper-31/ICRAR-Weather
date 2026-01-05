@@ -10,8 +10,8 @@ import pytz
 
 # --- Constants ---
 # Base directory where combined year folders are located.
-BASE_DIR = '../../2_DPIRD_dup/' 
-FINAL_DIR = '../../2_DPIRD_dup/Final_stations_combined_final/' 
+BASE_DIR = '../../../2_DPIRD_dup/' 
+FINAL_DIR = '../../../2_DPIRD_dup/Final_stations_combined_final/' 
 INPUT_DIR = Path(BASE_DIR) / "Final_stations_combined_final"
 
 PERTH_TZ = pytz.timezone("Australia/Perth")
@@ -19,7 +19,7 @@ PERTH_TZ = pytz.timezone("Australia/Perth")
 years = range(2021, 2025)
 final_dir_name = 'final_combined_excluding2021' 
 yearly_names = 'FINAL' 
-DPIRD_stations = 'DPIRD_stations_only.txt'
+DPIRD_stations = '../xarray/all_station_coordinates.csv'
 
 file_extension = '.csv'
 
@@ -41,17 +41,11 @@ def get_file_names(dir, resolution='m'):
 
 def filter_non_DPIRD(station_list, DPIRD_stations):
     #open DPIRD stations file
-    with open(DPIRD_stations, 'r') as f:
-        DPIRD_stations = f.read().splitlines()
-    
+    coords_df = pd.read_csv(DPIRD_stations)
+
     #delete non-DPIRD stations
-    filtered_stations = []
     for station in station_list:
-        if station not in DPIRD_stations:
-            if(station == 'Jarrahdale 2'):
-                continue
-            elif(station == 'Jarrahdale'):
-                continue
+        if station not in coords_df['name'].values:
             print("checking if station file exists to delete:", station)
             print(f"Will delete {station}{file_extension} file")
             # a = input("Press Enter to continue...")
@@ -75,7 +69,7 @@ def uncompress_file(folder_path):
     return True
 
 def check_and_remove_duplicates():
-    for csv_file in FINAL_DIR.glob("*.csv"):
+    for csv_file in Path(FINAL_DIR).glob("*.csv"):
         df = pd.read_csv(csv_file, parse_dates=["time"])
     
         # Detect duplicates and keep only the first occurrence
@@ -145,7 +139,7 @@ def get_monthly_dirs(base_path, year):
     """
     # Use glob to find all directories that match '2021' followed by two digits
     monthly_dirs = sorted([
-        p for p in base_path.glob(f"{year}[01][0-9]") if p.is_dir()
+        p for p in base_path.glob(f"{year}[0-1][0-9]") if p.is_dir()
     ])
 
     return monthly_dirs
@@ -229,32 +223,27 @@ def shift_time_and_convert():
     print("\n✔ All timestamps shifted +8 hours and converted to Australia/Perth timezone.")
 
 if __name__ == "__main__":
-    # iterate thru all folders in base dir
-    # path = BASE_DIR
-    # dirs = [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))]
-    # print(dirs)
 
-    # for i in range(len(dirs)):
-    #     print("now working with ", dirs[i])
-
-    # ------------------ Uncompress files ------------------ #
-    # print("Starting uncompression of files in test directory...")
-    # uncompress_file(FINAL_DIR)
-    # print("Uncompressed all files in test directory.")
-
+    # ------------------ Uncompress any .gz files ----------------- #
+    print("Starting uncompression of .gz files if any...")
+    year = Path(BASE_DIR) / "202112/"
+    print(f"Uncompressing files in {year}...")
+    a = input()
+    uncompress_file(year)  
+    print("Uncompression complete.\n")
 
     # ------------------ Consolidate monthly data into yearly data ----------------- #
-    # print("Starting consolidation of monthly data for years...")
-    # years = range(2021, 2025)
-    # for year in years:
-    #     print(f"\nProcessing year: {year}")
-    #     month_dirs = get_monthly_dirs(Path(BASE_DIR), year)
-    #     print(month_dirs)
-    #     consolidate_monthly_data(month_dirs, year)
+    print("Starting consolidation of monthly data for years...")
+    years = range(2021, 2025)
+    for year in years:
+        print(f"\nProcessing year: {year}")
+        month_dirs = get_monthly_dirs(Path(BASE_DIR), year)
+        print(month_dirs)
+        consolidate_monthly_data(month_dirs, year)
 
     # # ------------------ Consolidate yearly data into final data ----------------- #
-    # print("Starting consolidation of yearly data into final data...")
-    # combine_all_years_to_final(BASE_DIR)
+    print("Starting consolidation of yearly data into final data...")
+    combine_all_years_to_final(BASE_DIR)
 
     # ------------------ Get list of station files ------------------ #
     print("Getting list of station files in test directory...")
@@ -279,4 +268,4 @@ if __name__ == "__main__":
 
     # ------------------ Check Duplicates ----------------- #
     print("Starting duplicate entry check and removal...")
-    check_and_remove_duplicates(FINAL_DIR)
+    check_and_remove_duplicates()

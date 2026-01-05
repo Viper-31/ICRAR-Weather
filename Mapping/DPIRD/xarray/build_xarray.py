@@ -30,35 +30,47 @@ def build_xarray_from_stations(final_dir, station_metadata):
 
         # Add station dimension
         ds = ds.expand_dims(station=[station_name])
-
-        # Add station metadata attributes
-        if station_name in station_metadata:
-            for key, val in station_metadata[station_name].items():
-                ds.attrs[key] = val
-
         datasets.append(ds)
 
     # Merge all into one big dataset
     final_ds = xr.concat(datasets, dim="station")
 
+    stations = final_ds.station.values
+
+    final_ds = final_ds.assign_coords(
+        lat=("station", [station_metadata[s]["lat"] for s in stations]),
+        lon=("station", [station_metadata[s]["lon"] for s in stations]),
+        code=("station", [station_metadata[s]["code"] for s in stations]),
+    )
+
+    final_ds.attrs.update({
+        "time_zone": "UTC+08:00",
+        "time_standard": "local_time",
+        "comment": (
+            "All timestamps are local time in UTC+08:00 (Australia/Perth). "
+            "Timezone offset was removed from datetime values for NetCDF compatibility."
+        ),
+    })
+
     return final_ds
 
 
 if __name__ == "__main__":
-    final_dir = "../../2_DPIRD_dup/Final_stations_combined_final/"
-
+    final_dir = "../../../2_DPIRD_dup/Final_stations_combined_final/"
     # Read station coordinates CSV
     # Expected format: name,lat,lon
-    coords_csv = Path("dpird_station_coords.csv")
+    coords_csv = Path("all_station_coordinates.csv")
     coords_df = pd.read_csv(coords_csv)
 
     # Build metadata dictionary
-    station_metadata = {}
-    for _, row in coords_df.iterrows():
-        station_metadata[row['station']] = {
-            'lat': row['lat'],
-            'lon': row['lon']
+    station_metadata = {
+        row["name"]: {
+            "lat": row["lat"],
+            "lon": row["lon"],
+            "code": row["code"],
         }
+        for _, row in coords_df.iterrows()
+    }
 
     # Build xarray dataset
     ds = build_xarray_from_stations(final_dir, station_metadata)
