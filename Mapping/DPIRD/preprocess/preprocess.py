@@ -7,25 +7,10 @@ import os
 import gzip
 import pandas as pd
 import pytz
-
-# --- Constants ---
-# Base directory where combined year folders are located.
-BASE_DIR = '../../../2_DPIRD_dup/' 
-FINAL_DIR = '../../../2_DPIRD_dup/Final_stations_combined_final/' 
-INPUT_DIR = Path(BASE_DIR) / "Final_stations_combined_final"
-
-PERTH_TZ = pytz.timezone("Australia/Perth")
-# Target directory for the final combined files.
-years = range(2021, 2025)
-final_dir_name = 'final_combined_excluding2021' 
-yearly_names = 'FINAL' 
-DPIRD_stations = '../xarray/all_station_coordinates.csv'
-
-file_extension = '.csv'
-
+from loading_module_custom.utils import get_dataset_path, get_timezone, get_year_range, get_file_extension
 
 # ------------------ preprocess functions ------------------ #
-def get_file_names(dir, resolution='m'):
+def get_file_names(dir, resolution='m', file_extension='.csv'):
     file_dirs = []
 
     if(resolution == 'm'):
@@ -39,9 +24,9 @@ def get_file_names(dir, resolution='m'):
         
     return file_dirs
 
-def filter_non_DPIRD(station_list, DPIRD_stations):
+def filter_non_DPIRD(station_list, dpird_stations, final_dir, file_extension):
     #open DPIRD stations file
-    coords_df = pd.read_csv(DPIRD_stations)
+    coords_df = pd.read_csv(dpird_stations)
 
     #delete non-DPIRD stations
     for station in station_list:
@@ -50,7 +35,7 @@ def filter_non_DPIRD(station_list, DPIRD_stations):
             print(f"Will delete {station}{file_extension} file")
             # a = input("Press Enter to continue...")
             #delete station file
-            os.remove(f"{FINAL_DIR}/{station}{file_extension}")
+            os.remove(f"{final_dir}/{station}{file_extension}")
 
 def uncompress_file(folder_path):
     # if file extension is .gz, uncompress it
@@ -145,14 +130,12 @@ def get_monthly_dirs(base_path, year):
     return monthly_dirs
 
 def combine_all_years_to_final(base_dir):
-    base = Path(base_dir)
-
     # Where final combined files will go
-    final_dir = base / "Final_stations_combined_final"
+    final_dir = base_dir / "Final_stations_combined_final"
     final_dir.mkdir(exist_ok=True)
 
     # detect all YEAR_combined folders
-    year_dirs = sorted([d for d in base.iterdir() if d.is_dir() and d.name.endswith("_combined")])
+    year_dirs = sorted([d for d in base_dir.iterdir() if d.is_dir() and d.name.endswith("_combined")])
     print("Found yearly directories:", year_dirs)
 
     # Collect all station filenames across years
@@ -189,9 +172,8 @@ def combine_all_years_to_final(base_dir):
     print("\n🎉 FINAL STATION COMBINATION COMPLETE!")
     print(f"Output saved to: {final_dir}")
 
-def shift_time_and_convert():
-
-    csv_files = list(INPUT_DIR.glob("*.csv"))
+def shift_time_and_convert(final_dir, perth_tz):
+    csv_files = list(final_dir.glob("*.csv"))
     print(f"Found {len(csv_files)} station files.")
 
     for csv_file in csv_files:
@@ -209,7 +191,7 @@ def shift_time_and_convert():
             df["time"] = pd.to_datetime(df["time"], utc=True)
 
             # Convert timezone to Perth (UTC+08)
-            df["time"] = df["time"].dt.tz_convert(PERTH_TZ)
+            df["time"] = df["time"].dt.tz_convert(perth_tz)
 
             # Shift timestamps +16 hours
             df["time"] = df["time"] + pd.Timedelta(hours=16)
@@ -223,10 +205,19 @@ def shift_time_and_convert():
     print("\n✔ All timestamps shifted +8 hours and converted to Australia/Perth timezone.")
 
 if __name__ == "__main__":
+    # ------------------ Load Config ------------------ #
+    base_dir = get_dataset_path("base")
+    final_dir = get_dataset_path("final")
+    perth_tz = get_timezone()
+    years = get_year_range()
+    dpird_stations = get_dataset_path("dpird_station_list")
+    file_extension = get_file_extension()
+    print("Loading dataset from:", base_dir)
+
 
     # ------------------ Uncompress any .gz files ----------------- #
     print("Starting uncompression of .gz files if any...")
-    year = Path(BASE_DIR) / "202112/"
+    year = Path(base_dir) / "202112/"
     print(f"Uncompressing files in {year}...")
     a = input()
     uncompress_file(year)  
@@ -237,19 +228,19 @@ if __name__ == "__main__":
     years = range(2021, 2025)
     for year in years:
         print(f"\nProcessing year: {year}")
-        month_dirs = get_monthly_dirs(Path(BASE_DIR), year)
+        month_dirs = get_monthly_dirs(base_dir, year)
         print(month_dirs)
         consolidate_monthly_data(month_dirs, year)
 
     # # ------------------ Consolidate yearly data into final data ----------------- #
     print("Starting consolidation of yearly data into final data...")
-    combine_all_years_to_final(BASE_DIR)
+    combine_all_years_to_final(base_dir)
 
     # ------------------ Get list of station files ------------------ #
     print("Getting list of station files in test directory...")
-    print(FINAL_DIR)
+    print(final_dir)
     a = input("Press Enter to continue...")
-    station_list = sorted(get_file_names(Path(FINAL_DIR), resolution='o'))
+    station_list = sorted(get_file_names(final_dir, resolution='o', file_extension=file_extension))
 
     # ------------------ Cleaning DPIRD stations ------------------ #
     print("Starting filtering of non-DPIRD stations...")
@@ -258,14 +249,22 @@ if __name__ == "__main__":
         station_list[i] = str(station_list[i]).split('/')[-1].split(file_extension)[0]
     # print(station_list)
 
-    filtered = filter_non_DPIRD(station_list, DPIRD_stations)
+    filtered = filter_non_DPIRD(station_list, dpird_stations, final_dir, file_extension)
     print("Filtered non-DPIRD stations.")
     print()
 
     # ------------------ Shift Time ----------------- #
     print("Starting time shifting and timezone conversion...")
-    shift_time_and_convert()
+    shift_time_and_convert(final_dir, perth_tz)
 
     # ------------------ Check Duplicates ----------------- #
     print("Starting duplicate entry check and removal...")
     check_and_remove_duplicates()
+
+    print("Duplicate check and removal complete.")
+
+    # ------------------ All Done ----------------- #
+    print("\n************************ ALL PREPROCESSING COMPLETE *************************")
+    print("\nAll preprocessing complete!")
+    print(f"Cleaned data available at: {final_dir}")
+    print("Head over to 'build_xarray.py' to create xarray dataset from cleaned station CSV files.")

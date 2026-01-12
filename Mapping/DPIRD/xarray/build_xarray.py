@@ -5,13 +5,13 @@ This script builds an xarray dataset from station CSV files. It reads station me
 import pandas as pd
 import xarray as xr
 from pathlib import Path
+from loading_module_custom import get_dataset_path
 
 def build_xarray_from_stations(final_dir, station_metadata):
     """
     final_dir        -> Path to Final_stations_combined directory
     station_metadata -> dict: { "Station Name": {"lat": ..., "lon": ...} }
     """
-    final_dir = Path(final_dir)
 
     datasets = []
 
@@ -56,10 +56,12 @@ def build_xarray_from_stations(final_dir, station_metadata):
 
 
 if __name__ == "__main__":
-    final_dir = "../../../2_DPIRD_dup/Final_stations_combined_final/"
+    final_dir = get_dataset_path("processed")
+    print("Loading dataset from:", final_dir)
+
     # Read station coordinates CSV
     # Expected format: name,lat,lon
-    coords_csv = Path("all_station_coordinates.csv")
+    coords_csv = get_dataset_path("dpird_station_list")
     coords_df = pd.read_csv(coords_csv)
 
     # Build metadata dictionary
@@ -76,7 +78,7 @@ if __name__ == "__main__":
     ds = build_xarray_from_stations(final_dir, station_metadata)
 
     # Save to NetCDF
-    output_path = Path(final_dir) / "DPIRD_stations_combined.nc"
+    output_path = get_dataset_path("processed")
     ds.to_netcdf(output_path)
 
     print(f"Combined xarray dataset saved to {output_path}")

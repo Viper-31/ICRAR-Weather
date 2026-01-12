@@ -1,5 +1,5 @@
 .ICRAR_Venv/
-config*
+config
 2_DPIRD_dup/
 2_DPIRD/
 1_ECMWF/
@@ -8,3 +8,7 @@ config*
 *.vscode
 *.nc
 .DS_Store
+__pycache__/
+.ipynb_checkpoints/
+.vscode/
+loading_module_custom.egg-info/
