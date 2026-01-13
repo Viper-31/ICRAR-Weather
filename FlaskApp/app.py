@@ -73,11 +73,24 @@ def get_map_data():
     config = request.json
     var = config['variable']
     
-    # 1. Use slice to handle date ranges safely
+# 1. Use slice to handle date ranges safely
     subset = ds.sel(time=slice(config['start_date'], config['end_date']))
-    
-    if subset.time.size == 0:
-        return jsonify({"error": "No data found for this range"}), 400
+
+    # --- ADD THIS NEW SNIPPET HERE ---
+    # Define the bounding box for Western Australia
+    wa_lat_bounds = [-35.0, -13.0]
+    wa_lon_bounds = [115.0, 129.0]
+
+    # Filter the subset to only include WA coordinates
+    subset = subset.where(
+        (subset.lat >= wa_lat_bounds[0]) & (subset.lat <= wa_lat_bounds[1]) &
+        (subset.lon >= wa_lon_bounds[0]) & (subset.lon <= wa_lon_bounds[1]),
+        drop=True
+    )
+    # ---------------------------------
+
+    if subset.time.size == 0 or subset.lat.size == 0:
+        return jsonify({"error": "No data found for Western Australia in this range"}), 400
 
     # 2. MANDATORY ALIGNMENT: Sort first, outside the loop
     if 'station' in subset.coords:
