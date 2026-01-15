@@ -12,3 +12,4 @@ __pycache__/
 .ipynb_checkpoints/
 .vscode/
 loading_module_custom.egg-info/
+.env
