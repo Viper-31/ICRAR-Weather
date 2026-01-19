@@ -12,6 +12,9 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+#--------------------
+# DPIRD helper func
+# -------------------
 ds = None
 
 
@@ -129,6 +132,10 @@ def build_map_dataset(config):
         "var_name": var,
         "is_combined_wind": is_combined_wind
     }
+
+# ------------------
+# ECMWF helper func
+# ------------------
 
 @app.route('/')
 def index():
