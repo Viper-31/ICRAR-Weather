@@ -749,8 +749,8 @@ async function renderMap(varName) {
                 html = `<div class="rotator">
                     <svg class="arrow-svg" viewBox="0 0 24 24">
                         <g class="arrow-group">
-                            <line x1="2" y1="12" x2="21" y2="12" class="arrow-path arrow-fill" />
-                            <polyline points="15 6 21 12 15 18" class="arrow-path arrow-fill" />
+                            <line x1="3" y1="12" x2="18" y2="12" class="arrow-path arrow-line" />
+                            <polyline points="14 8 18 12 14 16" class="arrow-path arrow-line" />
                         </g>
                     </svg>
                 </div>`;
@@ -758,7 +758,7 @@ async function renderMap(varName) {
                 html = `<div class="square-inner"></div>`;
             }
             
-            const icon = L.divIcon({ className: 'marker-icon', html: html, iconSize: [32,32] });
+            const icon = L.divIcon({ className: 'marker-icon', html: html, iconSize: [20,20], iconAnchor:[10,10] });
 
             const m = L.marker([lat, d.lons[i]], { icon }).addTo(leafletMap).bindPopup(`${d.stations[i]}`);
             m._lastAngle = 0;
