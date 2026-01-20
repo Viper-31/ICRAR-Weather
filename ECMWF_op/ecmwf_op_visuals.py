@@ -23,14 +23,14 @@ MAX_CACHE_SIZE=2
 
 def available_dates():
     
-    files = sorted(list(DATA_ROOT.rglob("forecast.nc")))
+    files = sorted(list(DATA_ROOT.rglob("*.nc")))
     dates=[]
 
     for f in files:
         try:
-            yyyy= f.parts[-4]
-            mm= f.parts[-3]
-            dd= f.parts[-2]
+            yyyy= f.parent.parent.name
+            mm= f.parent.name
+            dd= f.stem
             dates.append(f"{yyyy}-{mm}-{dd}")
             
         except IndexError:
@@ -40,7 +40,7 @@ def available_dates():
 
 def path_from_date_str(date_str):
     yyyy,mm,dd= date_str.split("-")
-    return DATA_ROOT/ yyyy / mm / dd / "forecast.nc"
+    return DATA_ROOT/ yyyy / mm / f"{dd}.nc"
 
 def load_ds(date_str):
     if date_str in ds_cache:
