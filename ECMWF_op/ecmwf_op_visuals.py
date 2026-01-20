@@ -155,7 +155,7 @@ class ECMWFViewer(tk.Tk):
         self.var_var = tk.StringVar()
         self.var_cb = ttk.Combobox(top_control, textvariable=self.var_var, width=20)
         self.var_cb.pack(side=tk.LEFT, padx=5)
-        self.var_cb.bind("<<ComboboxSelected>>", lambda e: self.update_plot())
+        self.var_cb.bind("<<ComboboxSelected>>", self.on_var_change)
 
         # Time slider
         ttk.Label(top_control, text="Forecast reference time:").pack(side=tk.LEFT, padx=(10,0))
@@ -218,6 +218,41 @@ class ECMWFViewer(tk.Tk):
         
         self.update_plot()
         self.after(350, self.play_sequence) # ~300ms delay for smoothness. Adjust as needed.
+    
+    #Calculates min/max for current variable across whole file
+    def update_limits(self):
+        date_str= self.date_var.get()
+        var= self.var_var.get()
+        if not date_str or not var:return
+
+        ds= load_ds(date_str)
+
+        if var.startswith("wind"):
+            suffix= var[4:]
+            try:
+                u = ds[f"u{suffix}"]
+                v= ds[f"v{suffix}"]
+                self.vmax= float(np.sqrt(u**2+v**2).max().compute())
+                self.vmin=0
+
+            except KeyError:
+                self.vmin, self.vmax= 0, 200
+
+        elif var in {"tcc", "lcc", "mcc", "hcc"}:
+            self.vmin, self.vmax= 0.0,1.0
+        
+        else:
+            da=ds[var]
+            self.vmin=float(da.min().compute())
+            self.vmax=float(da.max().compute())
+
+            if self.vmin== self.vmax:
+                self.vmax += 1.0
+                
+    #On var change
+    def on_var_change(self, event=None):
+        self.update_limits()
+        self.update_plot()
 
     # Date change behaviour
     def on_date_change(self, event=None):
@@ -245,6 +280,7 @@ class ECMWFViewer(tk.Tk):
         
         n_steps= ds.sizes.get("step",1)
         self.step_slider.configure(to=n_steps-1,value=0)
+        self.update_limits()
         self.update_plot()
 
     # Arrow key controls
@@ -303,10 +339,12 @@ class ECMWFViewer(tk.Tk):
             u = ds[u_name].isel(time=t_index,step=s_index)
             v = ds[v_name].isel(time=t_index,step=s_index)
 
+            unit_str= u.attrs.get("units","GRIB_units")
             speed = np.sqrt(u.values**2 + v.values**2)
 
             # decimate grid for readability
             step = max(1, u.shape[0] // 30)
+            norm= mcolors.Normalize(vmin=self.vmin,vmax=self.vmax)
 
             q = self.ax.quiver(
             u.longitude[::step],
@@ -315,39 +353,39 @@ class ECMWFViewer(tk.Tk):
             v.values[::step, ::step],
             speed[::step, ::step],  # color by speed
             transform=ccrs.PlateCarree(),
-            scale=600,  # adjust as needed for visual sizing
+            scale=1000,  # adjust as needed for visual sizing
             cmap="plasma",
-            pivot="middle"
+            pivot="middle",
+            norm=norm
             )
             
             self.cbar = self.fig.colorbar(q, ax=self.ax, orientation="vertical", shrink=0.8, pad=0.05)
-            self.cbar.set_label("Wind speed (km/h)")
+            self.cbar.set_label(f"Wind speed ({unit_str})",  labelpad=20)
             self.ax.set_title(f"Wind vectors ({u_name}/{v_name})\nForecast reference time: {run_time_val} | Proper time: {valid_dt} (+{step_hours}h)")
             self.ax.coastlines()
             self.canvas.draw_idle()
             return       
-            
-        da= ds[var].isel(time=t_index,step=s_index)
 
+        #Scalar var case    
+        da= ds[var].isel(time=t_index,step=s_index)
+        long_name= da.attrs.get("long_name", var)
+        unit_str= da.attrs.get("units","GRIB_units")
+
+        levels= np.linspace(self.vmin,self.vmax,21)
         plot_kwargs = {
             "ax": self.ax,
             "transform": ccrs.PlateCarree(),
             "cmap": cmap_for(var),
-            "add_colorbar": False
+            "add_colorbar": False,
+            "vmin": self.vmin,
+            "vmax":self.vmax,
+            "levels": levels,
+            "extend": "both"
         }
 
         # Cloud fraction: fixed range 0–1
         if var in {"tcc", "lcc", "mcc", "hcc"}:
-            plot_kwargs["vmin"] = 0.0
-            plot_kwargs["vmax"] = 1.0
             plot_kwargs["cmap"]= CLOUD_CMAP
-
-        # Precipitation: dynamic levels
-        if var in {"tp", "cp", "lsp"}:
-            max_val = float(da.max().compute())
-            plot_kwargs["levels"] = np.linspace(0, max_val, 21)
-        else:
-            plot_kwargs["levels"] = 20
 
         # Plot
         mappable = da.plot.contourf(**plot_kwargs)
@@ -360,12 +398,12 @@ class ECMWFViewer(tk.Tk):
             shrink=0.8,
             pad=0.05
         )
+        self.cbar.set_label(f"{long_name} ({unit_str})", labelpad=20)
 
         # Styling
         self.ax.coastlines()
-        long_name= da.attrs.get("long_name", var)
         self.ax.set_title(f"{long_name}\nForecast reference time: {run_time_val} | Proper time: {valid_dt} (+{step_hours}h)")
-        self.fig.tight_layout(pad=3)
+        self.fig.subplots_adjust(left=0.05, right=0.88, top=0.92, bottom=0.05)
         self.canvas.draw_idle()
 
 # ---------------------
