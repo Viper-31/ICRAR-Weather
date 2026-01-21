@@ -1,5 +1,4 @@
 import xarray as xr
-import numpy as xr
 from functools import lru_cache
 from .s3_helper import get_filesystem, bucket
 
@@ -10,6 +9,7 @@ class ECMWFOperationalService:
         self.root_path= "ecmwf_op_clean"
         self.cache={}
     
+    #Scan bucket for YYYY/MM/DD.nc files
     def avaialble_dates(self):
         files= self.fs.glob(f"{self.bucket}/{self.root_path}/*/*/*.nc")
         dates =[]
@@ -56,7 +56,7 @@ class ECMWFOperationalService:
         for v in raw_vars:
             if not v.startswith('u') and v not in processed:
                 display_list.append(v)
-                
+
         return display_list
 
 
