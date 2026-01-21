@@ -7,10 +7,9 @@ import numpy as np
 import math
 
 from services.map_processing import build_spatial_overlays, compute_fill_circles, compute_fill_values
+from services.ecmwf_service import ECMWFOperationalService
 
 app = Flask(__name__)
-UPLOAD_FOLDER = 'uploads'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 #--------------------
 # DPIRD helper func
@@ -22,7 +21,6 @@ def _replace_nan(value):
     if isinstance(value, float) and math.isnan(value):
         return None
     return value
-
 
 def _serialize_frames(frames):
     cleaned = []
@@ -133,9 +131,6 @@ def build_map_dataset(config):
         "is_combined_wind": is_combined_wind
     }
 
-# ------------------
-# ECMWF helper func
-# ------------------
 
 @app.route('/')
 def index():
