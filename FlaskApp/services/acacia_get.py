@@ -2,6 +2,7 @@ import xarray as xr
 from functools import lru_cache
 from .s3_helper import get_filesystem, bucket
 
+"""ECMWF data getter from acacia"""
 class ECMWFOperationalService:
     def __init__(self):
         self.fs= get_filesystem()
@@ -10,7 +11,7 @@ class ECMWFOperationalService:
         self.cache={}
     
     #Scan bucket for YYYY/MM/DD.nc files
-    def avaialble_dates(self):
+    def available_dates(self):
         files= self.fs.glob(f"{self.bucket}/{self.root_path}/*/*/*.nc")
         dates =[]
         for f in files:
@@ -32,7 +33,7 @@ class ECMWFOperationalService:
         path= f"{self.bucket}/{self.root_path}/{yyyy}/{mm}/{dd}.nc"
         
         with self.fs.open(path,'rb') as f:
-            return xr.open_dataset(f, engine='netcdf4',chunks={})
+            return xr.open_dataset(f, engine='h5netcdf',chunks={})
 
     #Group wind var (u*,v*) for ecmwf_display vars    
     def get_display_vars(self,ds,merge_wind=True):
@@ -59,6 +60,33 @@ class ECMWFOperationalService:
 
         return display_list
 
+"""DPIRD data getter"""
+class DPIRDService:
+    def __init__(self):
+        self.fs = get_filesystem()
+        self.bucket = bucket
+        self.file_path = "weather/clean_DPIRD/DPIRD_final_stations.nc"
+    
+    def load_dataset(self):
+        path = f"{self.bucket}/{self.file_path}"
+        with self.fs.open(path, 'rb') as f:
+            return xr.open_dataset(f, engine='h5netcdf', chunks={})
+        
+    # Get display variables, merging wind components
+    def get_display_vars(self, ds):
+        raw_vars = [v for v in ds.data_vars]
+        display_list = []
+        
+        # Handle wind_3m as combined variable
+        if 'wind_3m_speed' in raw_vars and 'wind_3m_degN' in raw_vars:
+            display_list.append('wind_3m')
+        
+        # Add other variables except wind components
+        for v in raw_vars:
+            if v not in ['wind_3m_speed', 'wind_3m_degN']:
+                display_list.append(v)
+        
+        return display_list
 
 
 
