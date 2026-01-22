@@ -35,7 +35,7 @@ class ECMWFOperationalService:
         return xr.open_dataset(
             self.fs.open(path,'rb'), 
             engine='h5netcdf',
-            chunks='auto'
+            chunks={"time": 32}
             )
 
     #Group wind var (u*,v*) for ecmwf_display vars    
@@ -72,7 +72,7 @@ class DPIRDService:
     
     def load_dataset(self):
         path = f"{self.bucket}/{self.file_path}"
-        return xr.open_dataset(self.fs.open(path, 'rb'), engine='h5netcdf', chunks='auto')
+        return xr.open_dataset(self.fs.open(path, 'rb'), engine='h5netcdf', chunks={"time": 64})
         
     # Get display variables, merging wind components
     def get_display_vars(self, ds):
