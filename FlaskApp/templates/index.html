@@ -5,7 +5,7 @@
     <title>Weather Visualisation</title>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
@@ -30,8 +30,8 @@
                 <span class="label-sm">2. Mode & Time</span>
                 <label class="sr-only" for="viewMode">View mode</label>
                 <select id="viewMode" onchange="toggleViewUI()">
-                    <option value="map">🗺️ Map View</option>
-                    <option value="graph">📈 Graph</option>
+                    <option value="map">Map View</option>
+                    <option value="graph">Graph</option>
                 </select>
                 <label class="sr-only" for="startDate">Start date</label>
                 <input type="date" id="startDate">
@@ -133,6 +133,7 @@
                 <div id="spinner" class="spinner" style="display:none;"></div>
                 <p id="status-text">Waiting for data...</p>
             </div>
+            <div id="ecmwf-time-overlay" class="hidden">--</div>
             <div id="target-area"></div>
             <div id="right-ui-stack">
                 <div class="floating-card">
@@ -148,6 +149,8 @@
         </div>
     </main>
 
-    <script src="{{ url_for('static', filename='js/index.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='index.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='dpird.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='ecmwf.js') }}" defer></script>
 </body>
 </html>

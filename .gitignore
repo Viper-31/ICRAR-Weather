@@ -13,3 +13,6 @@ __pycache__/
 .vscode/
 loading_module_custom.egg-info/
 .env
+__init__.py
+FlaskApp/uploads/
+commands.txt
