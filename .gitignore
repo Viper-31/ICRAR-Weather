@@ -16,4 +16,4 @@ loading_module_custom.egg-info/
 rain/
 archv/
 temp*
-app_config.yaml
+*/app_config.yaml
