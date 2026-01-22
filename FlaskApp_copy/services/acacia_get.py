@@ -35,7 +35,7 @@ class ECMWFOperationalService:
         return xr.open_dataset(
             self.fs.open(path,'rb'), 
             engine='h5netcdf',
-            chunks='auto'
+            chunks={}
             )
 
     #Group wind var (u*,v*) for ecmwf_display vars    

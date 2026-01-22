@@ -355,17 +355,30 @@ def dpird_build_map_dataset(config):
     subset = ds.sel(time=slice(start_date, end_date))
 
     # 2. Apply WA Bounds Mask dynamically
-    # This limits the read to only the coordinates needed, and Dask handles the rest
     if "lat" in subset.coords and "lon" in subset.coords:
         wa_lat_bounds = [-35.0, -13.0]
         wa_lon_bounds = [115.0, 129.0]
-        mask = (
-            (subset.lat >= wa_lat_bounds[0]) & (subset.lat <= wa_lat_bounds[1]) &
-            (subset.lon >= wa_lon_bounds[0]) & (subset.lon <= wa_lon_bounds[1])
-        )
+        try:
+            subset = subset.sel(
+                lat=slice(wa_lat_bounds[0], wa_lat_bounds[1]),
+                lon=slice(wa_lon_bounds[0], wa_lon_bounds[1])
+            )
         
-        subset = subset.where(mask, drop=True)
+        except (KeyError, ValueError):
+            lat_vals = subset.lat.values  
+            lon_vals = subset.lon.values
+            lat_mask = (lat_vals >= wa_lat_bounds[0]) & (lat_vals <= wa_lat_bounds[1])
+            lon_mask = (lon_vals >= wa_lon_bounds[0]) & (lon_vals <= wa_lon_bounds[1])
 
+            lat_indices = np.where(lat_mask)[0]
+            lon_indices = np.where(lon_mask)[0]
+
+            if len(lat_indices) > 0 and len(lon_indices) > 0:
+                subset = subset.isel(
+                    lat=lat_indices,
+                    lon=lon_indices
+                )
+                
     if subset.time.size == 0 or subset.lat.size == 0:
         # Fallback if mask removed everything (e.g. data is outside WA)
         # Just use original subset so we return *something* valid rather than crashing
@@ -723,7 +736,7 @@ def upload_file():
         # time dimension when available, but fall back cleanly if that
         # environment is not present.
         try:
-            ds = xr.open_dataset(filepath, chunks={"time": 64})
+            ds = xr.open_dataset(filepath, chunks={"time": 4096})
         except Exception:
             ds = xr.open_dataset(filepath)
         
@@ -817,7 +830,7 @@ def ecmwf_upload():
         file.save(filepath)
 
         try:
-            ecmwf_ds = xr.open_dataset(filepath, chunks={"time": 32})
+            ecmwf_ds = xr.open_dataset(filepath, chunks={})
         except Exception:
             ecmwf_ds = xr.open_dataset(filepath)
         _init_ecmwf_metadata(ecmwf_ds)
