@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Weather Visualisation</title>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <aside id="sidebar">
+        <div class="section-card">
+            <label class="label-sm" for="dataMode">Data Mode</label>
+            <select id="dataMode" onchange="onDataModeChange()">
+                <option value="dpird" selected>DPIRD</option>
+                <option value="ecmwf">ECMWF</option>
+            </select>
+        </div>
+        <h1 class="sidebar-title">Weather Visualisation</h1>
+        <div id="dpirdSidebar">
+            <div class="section-card">
+                <span class="label-sm">1. Data Source</span>
+                <input type="file" id="fileInput" accept=".nc" aria-label="Upload DPIRD NetCDF file">
+                <button id="uploadBtn" onclick="uploadFile()">Upload NetCDF</button>
+            </div>
+
+            <div id="configSection" class="hidden">
+                <div class="section-card">
+                <span class="label-sm">2. Mode & Time</span>
+                <label class="sr-only" for="viewMode">View mode</label>
+                <select id="viewMode" onchange="toggleViewUI()">
+                    <option value="map">Map View</option>
+                    <option value="graph">Graph</option>
+                </select>
+                <label class="sr-only" for="startDate">Start date</label>
+                <input type="date" id="startDate">
+                <label class="sr-only" for="endDate">End date</label>
+                <input type="date" id="endDate">
+                <div id="dateError" class="field-error" aria-live="polite"></div>
+            </div>
+
+                <div id="timeSliderCard" class="section-card hidden">
+                <span class="label-sm">3. Timeline Control</span>
+                <input type="range" id="timeSlider" min="0" value="0">
+                <div id="timeLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">Step: 0</div>
+            </div>
+
+            <div id="stationSelector" class="section-card hidden">
+                <label class="label-sm" for="stationDropdown">Station Selection</label>
+                <select id="stationDropdown"></select>
+            </div>
+
+            <div id="windComponentSelector" class="section-card hidden">
+                <span class="label-sm">Wind Component</span>
+                <label class="var-row">
+                    <input type="radio" name="windComponent" value="speed" checked> Wind Speed (3m)
+                </label>
+                <label class="var-row">
+                    <input type="radio" name="windComponent" value="angle"> Wind Direction (degN)
+                </label>
+            </div>
+
+            <div id="radiusSelector" class="section-card hidden">
+                <span class="label-sm">Coverage Radius</span>
+                <label class="var-row" style="justify-content: space-between;">
+                    <span>Show 10 km radius</span>
+                    <input type="checkbox" id="radiusToggle">
+                </label>
+                <label class="var-row" style="justify-content: space-between;">
+                    <span>Highlight station boundary</span>
+                    <input type="checkbox" id="borderToggle">
+                </label>
+                <label class="var-row" style="justify-content: space-between;">
+                    <span>Fill coverage area</span>
+                    <input type="checkbox" id="fillToggle">
+                </label>
+                <label class="var-row" style="justify-content: space-between;">
+                    <span>Colour fill circles</span>
+                    <input type="checkbox" id="fillPaintToggle">
+                </label>
+                <p style="margin: 8px 0 0; font-size: 11px; color: #648b68;">Visualise 10 km coverage circles, outline the convex hull, and optionally fill the remaining area with additional coverage points.</p>
+            </div>
+
+            <div class="section-card">
+                <span class="label-sm">Variable Selection</span>
+                <div id="varStack" class="var-stack"></div>
+            </div>
+            <button id="renderBtn" onclick="runVisualization()" style="background: #0ea5e9;" disabled>Render Data</button>
+        </div>
+        </div>
+
+        <div id="ecmwfSidebar" style="display:none; margin-top: 10px;">
+            <div class="section-card">
+                <span class="label-sm">1. Data Source</span>
+                <input type="file" id="ecmwfFileInput" accept=".nc" aria-label="Upload ECMWF NetCDF file">
+                <button id="ecmwfUploadBtn" onclick="uploadEcmwfFile()">Choose ECMWF NetCDF</button>
+            </div>
+            <div id="ecmwfConfigCard" class="section-card hidden">
+                <span class="label-sm">2. ECMWF Configuration</span>
+                <label class="label-sm" style="margin-top:6px;" for="ecmwfVarSelect">Variable</label>
+                <select id="ecmwfVarSelect"></select>
+                <label class="label-sm" style="margin-top:6px;">Date Range</label>
+                    <label class="sr-only" for="ecmwfStartSelect">Start date</label>
+                    <select id="ecmwfStartSelect"></select>
+                    <label class="sr-only" for="ecmwfEndSelect">End date</label>
+                    <select id="ecmwfEndSelect"></select>
+            </div>
+            <div id="ecmwfTimeCard" class="section-card hidden">
+                <span class="label-sm">3. Forecast Reference Time</span>
+                <input type="range" id="ecmwfTimeSlider" min="0" value="0" aria-label="ECMWF forecast time index">
+                <div id="ecmwfTimeLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">T[0]</div>
+            </div>
+            <div id="ecmwfStepCard" class="section-card hidden">
+                <span class="label-sm">4. Step (+hours)</span>
+                <input type="range" id="ecmwfStepSlider" min="0" value="0" aria-label="ECMWF forecast lead time in hours">
+                <div id="ecmwfStepLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">+0 h</div>
+            </div>
+            <div id="ecmwfViewModeCard" class="section-card hidden">
+                <span class="label-sm">5. View Mode</span>
+                <label class="var-row" style="justify-content: space-between;">
+                    <span>Show contours (no OSM map)</span>
+                    <input type="checkbox" id="ecmwfContourToggle">
+                </label>
+            </div>
+            <button id="ecmwfRenderBtn" onclick="runEcmwfVisualization()" style="background: #0ea5e9; margin-top: 8px;">Render ECMWF</button>
+        </div>
+    </aside>
+
+    <main id="main-content">
+        <div id="viz-container" aria-busy="false">
+            <div id="empty-state">
+                <div id="spinner" class="spinner" style="display:none;"></div>
+                <p id="status-text">Waiting for data...</p>
+            </div>
+            <div id="ecmwf-time-overlay" class="hidden">--</div>
+            <div id="target-area"></div>
+            <div id="right-ui-stack">
+                <div class="floating-card">
+                    <div id="max-val" class="val-text">--</div>
+                    <div id="color-bar"></div>
+                    <div id="min-val" class="val-text">--</div>
+                </div>
+                <div class="floating-card" style="margin-top:10px">
+                    <div id="active-var" style="font-size: 11px; font-weight: 800; color: var(--primary);">Variable</div>
+                    <div id="active-time" style="font-size: 10px; color: #64748b;">--</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='index.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='dpird.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='ecmwf.js') }}" defer></script>
+</body>
+</html>
