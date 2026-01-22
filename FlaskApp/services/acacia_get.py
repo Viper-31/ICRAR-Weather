@@ -72,7 +72,7 @@ class DPIRDService:
     
     def load_dataset(self):
         path = f"{self.bucket}/{self.file_path}"
-        return xr.open_dataset(path, engine='h5netcdf', chunks='auto')
+        return xr.open_dataset(self.fs.open(path, 'rb'), engine='h5netcdf', chunks='auto')
         
     # Get display variables, merging wind components
     def get_display_vars(self, ds):

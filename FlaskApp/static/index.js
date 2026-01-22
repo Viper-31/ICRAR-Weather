@@ -1,4 +1,5 @@
-let appMode = 'dpird'; // 'dpird' or 'ecmwf'
+let appMode = 'none'; // changed default
+const loadedDatasets = { dpird: false, ecmwf: false }; 
 const dpirdViewState = {
     mode: null,          // 'map' or 'graph'
     varName: null,       // DPIRD logical variable (e.g. 'airTemperature' or 'wind_3m')
@@ -102,18 +103,115 @@ function validateDpirdConfig() {
     renderBtn.disabled = !ok;
 }
 
-function setAppMode(mode) {
-    const prevMode = appMode;
-    appMode = mode;
-    const dpirdSidebar = document.getElementById('dpirdSidebar');
-    const ecmwfSidebar = document.getElementById('ecmwfSidebar');
-    if (dpirdSidebar) {
-        dpirdSidebar.style.display = (mode === 'dpird') ? '' : 'none';
+// --- NEW: Query Functionality ---
+async function queryAcacia() {
+    const chkDpird = document.getElementById('chkDpird');
+    const chkEcmwf = document.getElementById('chkEcmwf');
+    
+    // Build selection list
+    const selection = [];
+    if (chkDpird && chkDpird.checked) selection.push('DPIRD');
+    if (chkEcmwf && chkEcmwf.checked) selection.push('ECMWF');
+
+    setLoading(true, `Querying Acacia... (${selection.join(', ') || 'None'})`);
+
+    try {
+        const res = await fetch('/query', {
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ datasets: selection })
+        });
+        const data = await res.json();
+        
+        if (data.error) throw new Error(data.error);
+
+        // 1. Handle DPIRD
+        if (data.dpird_meta) {
+            loadedDatasets.dpird = true;
+            // Call function defined in dpird.js
+            if(window.populateDpirdUi) window.populateDpirdUi(data.dpird_meta); 
+        } else {
+            loadedDatasets.dpird = false;
+        }
+
+        // 2. Handle ECMWF
+        if (data.ecmwf_meta) {
+            loadedDatasets.ecmwf = true;
+            // Call function defined in ecmwf.js
+            if(window.populateEcmwfUi) window.populateEcmwfUi(data.ecmwf_meta);
+        } else {
+            loadedDatasets.ecmwf = false;
+        }
+        
+        updateContextSwitcher();
+        setLoading(false, 'Data loaded. Use 2. Active Control Panel to configure.');
+
+    } catch (err) {
+        console.error(err);
+        setLoading(false, `Query failed: ${err.message}`);
     }
-    if (ecmwfSidebar) {
-        ecmwfSidebar.style.display = (mode === 'ecmwf') ? '' : 'none';
+}
+
+// --- NEW: Context Switching Logic ---
+function updateContextSwitcher() {
+    const sw = document.getElementById('contextSwitch');
+    const optDpird = document.getElementById('optDpird');
+    const optEcmwf = document.getElementById('optEcmwf');
+
+    // Hide entire switcher if nothing is loaded
+    if (!loadedDatasets.dpird && !loadedDatasets.ecmwf) {
+        sw.classList.add('hidden');
+        switchViewContext('none'); 
+        return;
     }
 
+    sw.classList.remove('hidden');
+    
+    // Show/Hide specific radio buttons
+    optDpird.style.display = loadedDatasets.dpird ? 'flex' : 'none';
+    optEcmwf.style.display = loadedDatasets.ecmwf ? 'flex' : 'none';
+
+    // Auto-select logic
+    const currentRad = document.querySelector('input[name="viewContext"]:checked');
+    const currentVal = currentRad ? currentRad.value : null;
+
+    if (currentVal === 'dpird' && loadedDatasets.dpird) {
+        // Keep current
+    } else if (currentVal === 'ecmwf' && loadedDatasets.ecmwf) {
+        // Keep current
+    } else if (loadedDatasets.dpird) {
+        // Switch to DPIRD
+        const r = document.querySelector('input[name="viewContext"][value="dpird"]');
+        if(r) { r.checked = true; switchViewContext('dpird'); }
+    } else if (loadedDatasets.ecmwf) {
+        // Switch to ECMWF
+        const r = document.querySelector('input[name="viewContext"][value="ecmwf"]');
+        if(r) { r.checked = true; switchViewContext('ecmwf'); }
+    }
+}
+
+// Replaces the old setAppMode
+function switchViewContext(mode) {
+    const prevMode = appMode;
+    appMode = mode; // Update global appMode
+    // UI Visibility
+    const dpirdSidebar = document.getElementById('dpirdSidebar');
+    const ecmwfSidebar = document.getElementById('ecmwfSidebar');
+    
+    // FIX: Use classList to toggle visibility to override !important in CSS
+    if (mode === 'dpird') {
+        if (dpirdSidebar) dpirdSidebar.classList.remove('hidden');
+        if (ecmwfSidebar) ecmwfSidebar.classList.add('hidden');
+    } else if (mode === 'ecmwf') {
+        if (dpirdSidebar) dpirdSidebar.classList.add('hidden');
+        if (ecmwfSidebar) ecmwfSidebar.classList.remove('hidden');
+    } else {
+        // None
+        if (dpirdSidebar) dpirdSidebar.classList.add('hidden');
+        if (ecmwfSidebar) ecmwfSidebar.classList.add('hidden');
+    }
+
+    // Cleanup Logic (Merged from old setAppMode)
     const ecmwfOverlay = document.getElementById('ecmwf-time-overlay');
     if (mode !== 'ecmwf' && ecmwfOverlay) {
         ecmwfOverlay.classList.add('hidden');
@@ -127,16 +225,12 @@ function setAppMode(mode) {
         if (dpirdViewState.mode === 'map') {
             dpirdViewState.timeIdx = playback.currentIdx || 0;
         }
-        teardownMap();
-        if (rightUi) rightUi.style.display = 'none';
-        if (statusText) {
-            statusText.innerText = 'ECMWF mode selected. Waiting for ECMWF configuration...';
-        }
-        // If we already have an ECMWF dataset loaded, restore its view
-        if (ecmwfState.timeLabels.length) {
-            setupEcmwfMap({
-                time_labels: ecmwfState.timeLabels
-            }, true);
+        teardownMap(); // Clear map for ECMWF
+        if (statusText) statusText.innerText = 'ECMWF mode selected. Configure parameters.';
+        
+        // Restore ECMWF map state if available
+        if (window.ecmwfState && window.ecmwfState.timeLabels.length && window.setupEcmwfMap) {
+            window.setupEcmwfMap({ time_labels: window.ecmwfState.timeLabels }, true);
         }
         return;
     }
@@ -146,7 +240,7 @@ function setAppMode(mode) {
         if (statusText && statusText.innerText.startsWith('ECMWF mode selected')) {
             statusText.innerText = 'Waiting for data...';
         }
-        // Only attempt restore if we have a remembered state
+        // Restore DPIRD map state if available
         if (dpirdViewState.mode === 'map' && dpirdViewState.varName) {
             // Re-render map and restore timeline position
             renderMap(dpirdViewState.varName).then(() => {
@@ -160,6 +254,12 @@ function setAppMode(mode) {
             renderGraph(dpirdViewState.datasetVar, dpirdViewState.displayLabel).catch(err => console.error(err));
         }
         return;
+    }
+    
+    // Default Empty State
+    if (mode === 'none') {
+        teardownMap();
+        if (statusText) statusText.innerText = 'No datasets loaded. Select sources above.';
     }
 }
 
@@ -765,8 +865,6 @@ function toggleViewUI() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    const modeSelect = document.getElementById('dataMode');
-    if (modeSelect) {
-        setAppMode(modeSelect.value || 'dpird');
-    }
+    // Just ensure correct initial state
+    updateContextSwitcher();
 });

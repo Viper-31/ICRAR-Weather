@@ -119,6 +119,27 @@ const ECMWF_CMAP_DEFS = {
     }
 };
 
+// --- Shared UI Populator ---
+window.populateEcmwfUi = function(data) {
+    if (!data) return;
+
+    // Update internal ECMWF state
+    ecmwfState.timeLabels = Array.isArray(data.time_labels) ? data.time_labels : [];
+    ecmwfState.stepValues = Array.isArray(data.step_values) ? data.step_values : [];
+    ecmwfState.timeCount = typeof data.time_count === 'number' ? data.time_count : ecmwfState.timeLabels.length;
+    ecmwfState.stepCount = typeof data.step_count === 'number' ? data.step_count : ecmwfState.stepValues.length;
+    ecmwfState.timeIndex = 0;
+    ecmwfState.stepIndex = 0;
+    ecmwfState.rangeStart = 0;
+    ecmwfState.rangeEnd = Math.max(0, ecmwfState.timeLabels.length - 1);
+
+    // Initialise the Map container basics
+    setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, false);
+    
+    // Initialise the Sidebar controls (Dropdowns etc)
+    initEcmwfConfigUi(data);
+}
+
 function getEcmwfCmapName(varName) {
     if (!varName) return 'viridis';
     if (Object.prototype.hasOwnProperty.call(ECMWF_VAR_CMAPS, varName)) {
@@ -259,30 +280,28 @@ function formatEcmwfValidTime(timeIndex, stepIndex) {
 async function uploadEcmwfFile() {
     if (appMode !== 'ecmwf') return;
     const input = document.getElementById('ecmwfFileInput');
-    if (!input || !input.files || !input.files[0]) return;
+    if (!input || !input.files[0]) return;
 
     const file = input.files[0];
-    setLoading(true, `Loading ECMWF file: ${file.name}...`);
-
+    setLoading(true, `Loading ECMWF file...`);
     const fd = new FormData();
-    fd.append('file', file);
+    fd.append('file', input.files[0]);
+    
     try {
         const res = await fetch('/ecmwf_upload', { method: 'POST', body: fd });
         const data = await res.json();
         if (!res.ok || data.error) throw new Error(data.error || 'Upload failed');
 
-        ecmwfState.timeLabels = Array.isArray(data.time_labels) ? data.time_labels : [];
-        ecmwfState.stepValues = Array.isArray(data.step_values) ? data.step_values : [];
-        ecmwfState.timeCount = typeof data.time_count === 'number' ? data.time_count : ecmwfState.timeLabels.length;
-        ecmwfState.stepCount = typeof data.step_count === 'number' ? data.step_count : ecmwfState.stepValues.length;
-        ecmwfState.timeIndex = 0;
-        ecmwfState.stepIndex = 0;
-        ecmwfState.rangeStart = 0;
-        ecmwfState.rangeEnd = Math.max(0, ecmwfState.timeLabels.length - 1);
+        // Update Global State
+        loadedDatasets.ecmwf = true;
 
-        setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, false);
-        initEcmwfConfigUi(data);
-        setLoading(false, 'ECMWF dataset loaded. Configure options and click Render.');
+        // --- CHANGED: Use the helper ---
+        window.populateEcmwfUi(data);
+
+        // Update Switcher
+        updateContextSwitcher();
+
+        setLoading(false, 'ECMWF dataset loaded.');
     } catch (err) {
         console.error(err);
         setLoading(false, `ECMWF error: ${err.message}`);

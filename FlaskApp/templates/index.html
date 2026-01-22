@@ -24,9 +24,28 @@
             <button id="btnQuery" onclick="queryAcacia()" style="margin-top:8px; width:100%; background-color: #475569;">Load Selected Datasets</button>
         </div>
 
-        <!-- 2. View Context Switcher (Dynamic) -->
+        <!-- 2. Manual Upload Section (Always Visible) -->
+        <div class="section-card">
+            <span class="label-sm">2. Manual Upload</span>
+            <div style="margin-bottom: 8px;">
+                <span class="label-sm" style="font-size:9px; margin-bottom:2px;">DPIRD NetCDF (.nc)</span>
+                <div style="display:flex; gap:5px;">
+                    <input type="file" id="fileInput" accept=".nc" style="width: 140px; font-size:10px;">
+                    <button id="uploadBtn" onclick="uploadFile()" style="padding: 2px 8px; font-size:10px;">Upload</button>
+                </div>
+            </div>
+            <div>
+                 <span class="label-sm" style="font-size:9px; margin-bottom:2px;">ECMWF NetCDF (.nc)</span>
+                 <div style="display:flex; gap:5px;">
+                    <input type="file" id="ecmwfFileInput" accept=".nc" style="width: 140px; font-size:10px;">
+                    <button id="ecmwfUploadBtn" onclick="uploadEcmwfFile()" style="padding: 2px 8px; font-size:10px;">Upload</button>
+                 </div>
+            </div>
+        </div>
+
+        <!-- 3. View Context Switcher (Dynamic) -->
         <div id="contextSwitch" class="section-card hidden">
-            <span class="label-sm">2. Active Control Panel</span>
+            <span class="label-sm">3. Active Control Panel</span>
             <div style="display: flex; gap: 10px; margin-top:5px;">
                 <label class="var-row" id="optDpird" style="display:none;">
                     <input type="radio" name="viewContext" value="dpird" onchange="switchViewContext(this.value)"> 
@@ -43,14 +62,6 @@
 
         <!-- DPIRD CONTROLS -->
         <div id="dpirdSidebar" class="hidden">
-            <div class="section-card">
-                <span class="label-sm">Manual Upload (Optional)</span>
-                <div style="display:flex; gap:5px;">
-                    <input type="file" id="fileInput" accept=".nc" style="width: 140px; font-size:10px;">
-                    <button id="uploadBtn" onclick="uploadFile()" style="padding: 2px 8px; font-size:10px;">Upload</button>
-                </div>
-            </div>
-
             <div id="configSection" class="hidden">
                 <div class="section-card">
                     <span class="label-sm">Mode & Time</span>
@@ -65,7 +76,7 @@
                 </div>
 
                 <div id="timeSliderCard" class="section-card hidden">
-                <span class="label-sm">3. Timeline Control</span>
+                <span class="label-sm">Timeline Control</span>
                     <input type="range" id="timeSlider" min="0" value="0">
                     <div id="timeLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">Step: 0</div>
                 </div>
@@ -116,13 +127,7 @@
 
         <!-- ECMWF CONTROLS -->
         <div id="ecmwfSidebar" class="hidden">
-            <div class="section-card">
-                 <span class="label-sm">Manual Upload (Optional)</span>
-                 <div style="display:flex; gap:5px;">
-                    <input type="file" id="ecmwfFileInput" accept=".nc" style="width: 140px; font-size:10px;">
-                    <button id="ecmwfUploadBtn" onclick="uploadEcmwfFile()" style="padding: 2px 8px; font-size:10px;">Upload</button>
-                 </div>
-            </div>
+            <!-- Upload section removed from here -->
 
             <div id="ecmwfConfigCard" class="section-card hidden">
                 <span class="label-sm">2. ECMWF Configuration</span>
@@ -137,13 +142,13 @@
             </div>
 
             <div id="ecmwfTimeCard" class="section-card hidden">
-                <span class="label-sm">3. Forecast Reference Time</span>
+                <span class="label-sm">Forecast Reference Time</span>
                 <input type="range" id="ecmwfTimeSlider" min="0" value="0" aria-label="ECMWF forecast time index">
                 <div id="ecmwfTimeLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">T[0]</div>
             </div>
 
             <div id="ecmwfStepCard" class="section-card hidden">
-                <span class="label-sm">4. Step (+hours)</span>
+                <span class="label-sm">Step (+hours)</span>
                 <input type="range" id="ecmwfStepSlider" min="0" value="0" aria-label="ECMWF forecast lead time in hours">
                 <div id="ecmwfStepLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">+0 h</div>
             </div>

@@ -8,13 +8,42 @@
 // clearPlaybackAttention.
 
 // Upload DPIRD NetCDF file and initialise config UI
+
+// ---Shared UI Populator ---
+window.populateDpirdUi = function(data) {
+    if (!data) return;
+    
+    const varStack = document.getElementById('varStack');
+    if (varStack) {
+        varStack.innerHTML = (data.variables || []).map(v => `
+            <label class="var-row"><input type="radio" name="vItem" value="${v}"> ${v}</label>`
+        ).join('');
+    }
+
+    const stationDropdown = document.getElementById('stationDropdown');
+    if (stationDropdown) {
+        stationDropdown.innerHTML = (data.stations || []).map(s => `<option value="${s}">${s}</option>`).join('');
+    }
+
+    const startInput = document.getElementById('startDate');
+    const endInput = document.getElementById('endDate');
+    if (startInput && endInput && Array.isArray(data.date_range) && data.date_range.length === 2) {
+        startInput.value = data.date_range[0];
+        endInput.value = data.date_range[1];
+    }
+
+    const configSection = document.getElementById('configSection');
+    if (configSection) configSection.classList.remove('hidden');
+
+    attachVariableListeners();
+    attachConfigChangeHandlers();
+    validateDpirdConfig();
+}
 async function uploadFile() {
     const fileInput = document.getElementById('fileInput');
     const uploadBtn = document.getElementById('uploadBtn');
     if (!fileInput || !fileInput.files || !fileInput.files[0]) return;
 
-    fileInput.disabled = true;
-    if (uploadBtn) uploadBtn.disabled = true;
     setLoading(true, `Processing ${fileInput.files[0].name}...`);
 
     const fd = new FormData();
@@ -24,34 +53,21 @@ async function uploadFile() {
         const data = await res.json();
         if (!res.ok || data.error) throw new Error(data.error || 'Upload failed');
 
-        const varStack = document.getElementById('varStack');
-        if (varStack) {
-            varStack.innerHTML = (data.variables || []).map(v => `
-                <label class="var-row"><input type="radio" name="vItem" value="${v}"> ${v}</label>`
-            ).join('');
-        }
-        const stationDropdown = document.getElementById('stationDropdown');
-        if (stationDropdown) {
-            stationDropdown.innerHTML = (data.stations || []).map(s => `<option value="${s}">${s}</option>`).join('');
-        }
-        const startInput = document.getElementById('startDate');
-        const endInput = document.getElementById('endDate');
-        if (startInput && endInput && Array.isArray(data.date_range) && data.date_range.length === 2) {
-            startInput.value = data.date_range[0];
-            endInput.value = data.date_range[1];
-        }
-        const configSection = document.getElementById('configSection');
-        if (configSection) configSection.classList.remove('hidden');
-
-        attachVariableListeners();
-        attachConfigChangeHandlers();
-        validateDpirdConfig();
+        // Flag for revert, if wrong. Update Global State
+        loadedDatasets.dpird = true;
+        
+        // --- CHANGED: Use the helper ---
+        window.populateDpirdUi(data);
+        
+        // Update Switcher
+        updateContextSwitcher();
+        
         setLoading(false, 'Dataset ready. Choose a variable and view.');
     } catch (err) {
+        // ... err handling ...
         console.error(err);
-        setLoading(false, `Error loading dataset: ${err.message}`);
+        setLoading(false, `Error: ${err.message}`);
     } finally {
-        if (uploadBtn) uploadBtn.disabled = false;
         fileInput.disabled = false;
     }
 }
