@@ -66,7 +66,25 @@ body { font-family: 'Inter', system-ui, sans-serif; margin: 0; display: flex; he
 .val-text { font-size: 12px; font-weight: 700; color: #1e293b; }
 
 .var-stack { max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
-.var-row { display: flex; align-items: center; padding: 10px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 14px; }
+.var-row { 
+    display: flex; 
+    align-items: center; 
+    padding: 10px; 
+    border-bottom: 1px solid var(--border); 
+    cursor: pointer; 
+    font-size: 14px; 
+}
+
+.var-row span {
+    margin-left: 8px;
+    flex: 1;
+}
+
+/* Dataset source badges */
+.var-row input:checked + span {
+    font-weight: 600;
+    color: var(--primary);
+}
 
 select, input[type="date"], input[type="file"], input[type="range"] { width: 100%; padding: 10px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 8px; }
 button { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; }

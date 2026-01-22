@@ -32,8 +32,11 @@ class ECMWFOperationalService:
         yyyy, mm, dd= date_str.split('-')
         path= f"{self.bucket}/{self.root_path}/{yyyy}/{mm}/{dd}.nc"
         
-        with self.fs.open(path,'rb') as f:
-            return xr.open_dataset(f, engine='h5netcdf',chunks={})
+        return xr.open_dataset(
+            self.fs.open(path,'rb'), 
+            engine='h5netcdf',
+            chunks='auto'
+            )
 
     #Group wind var (u*,v*) for ecmwf_display vars    
     def get_display_vars(self,ds,merge_wind=True):
@@ -65,12 +68,11 @@ class DPIRDService:
     def __init__(self):
         self.fs = get_filesystem()
         self.bucket = bucket
-        self.file_path = "weather/clean_DPIRD/DPIRD_final_stations.nc"
+        self.file_path = "clean_DPIRD/DPIRD_final_stations.nc"
     
     def load_dataset(self):
         path = f"{self.bucket}/{self.file_path}"
-        with self.fs.open(path, 'rb') as f:
-            return xr.open_dataset(f, engine='h5netcdf', chunks={})
+        return xr.open_dataset(path, engine='h5netcdf', chunks='auto')
         
     # Get display variables, merging wind components
     def get_display_vars(self, ds):

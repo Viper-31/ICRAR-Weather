@@ -47,6 +47,96 @@ const playback = {
 };
 let configListenersAttached = false;
 
+async function switchDataset() {
+    const dpirdCheck = document.getElementById('dpirdCheck');
+    const ecmwfCheck = document.getElementById('ecmwfCheck');
+    const statusText = document.getElementById('status-text');
+    const spinner = document.getElementById('spinner');
+    
+    const selected = [];
+    if (dpirdCheck && dpirdCheck.checked) selected.push('DPIRD');
+    if (ecmwfCheck && ecmwfCheck.checked) selected.push('ECMWF');
+    
+    if (selected.length === 0) {
+        statusText.innerHTML = `<span style="color:red">Select at least one dataset</span>`;
+        return;
+    }
+    
+    spinner.style.display = "block";
+    statusText.innerText = `Loading ${selected.join(' + ')}...`;
+    
+    try {
+        const res = await fetch('/switch_dataset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ datasets: selected })
+        });
+        
+        if (!res.ok) {
+            const errorText = await res.text();
+            let errorMsg;
+            try {
+                const errorData = JSON.parse(errorText);
+                errorMsg = errorData.error || 'Unknown error';
+            } catch {
+                errorMsg = errorText || 'Server error';
+            }
+            throw new Error(errorMsg);
+        }
+        
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        
+        console.log("Server response:", data.message);
+        await refreshInitData();
+        
+        statusText.innerText = `Loaded: ${selected.join(' + ')}. Select parameters.`;
+    } catch (err) {
+        console.error(err);
+        statusText.innerHTML = `<span style="color:red">Error: ${err.message}</span>`;
+    } finally {
+        spinner.style.display = "none";
+    }
+}
+
+async function refreshInitData() {
+    const res = await fetch('/init_data');
+    
+    if (!res.ok) {
+        throw new Error(`Failed to fetch init data: ${res.statusText}`);
+    }
+    
+    const data = await res.json();
+    
+    if (data.error) throw new Error(data.error);
+    
+    // Update Sidebar UI with dataset source labels
+    document.getElementById('varStack').innerHTML = data.variables.map(v => `
+        <label class="var-row">
+            <input type="radio" name="vItem" value="${v.id}">
+            <span>${v.label}</span>
+        </label>`).join('');
+        
+    document.getElementById('stationDropdown').innerHTML = data.stations.map(s => 
+        `<option value="${s}">${s}</option>`).join('');
+    
+    document.getElementById('startDate').value = data.date_range[0];
+    document.getElementById('endDate').value = data.date_range[1];
+    
+    // Store ECMWF time info if available
+    if (data.ecmwf_time_info) {
+        window.ecmwfTimeInfo = data.ecmwf_time_info;
+        console.log("ECMWF Time Structure:", data.ecmwf_time_info);
+    }
+    
+    // Show configuration options
+    document.getElementById('configSection').classList.remove('hidden');
+    
+    // Re-attach listeners
+    attachVariableListeners();
+    attachConfigChangeHandlers();
+}
+
 function clamp01(value) {
     if (!Number.isFinite(value)) return 0;
     if (value < 0) return 0;
@@ -602,44 +692,27 @@ function toggleViewUI() {
     updateVariableDependentUI();
 }
 
-async function uploadFile() {
-    const fileInput = document.getElementById('fileInput');
-    const uploadBtn = document.getElementById('uploadBtn');
-    const statusText = document.getElementById('status-text');
-    const spinner = document.getElementById('spinner');
-    if(!fileInput.files[0]) return;
-
-    fileInput.disabled = true;
-    uploadBtn.disabled = true;
-    spinner.style.display = "block";
-    statusText.innerHTML = `Processing <b>${fileInput.files[0].name}</b>...`;
-
-    const fd = new FormData(); fd.append('file', fileInput.files[0]);
-    try {
-        const res = await fetch('/upload', { method: 'POST', body: fd });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        document.getElementById('varStack').innerHTML = data.variables.map(v => `
-            <label class="var-row"><input type="radio" name="vItem" value="${v}"> ${v}</label>`).join('');
-        document.getElementById('stationDropdown').innerHTML = data.stations.map(s => `<option value="${s}">${s}</option>`).join('');
-        document.getElementById('startDate').value = data.date_range[0];
-        document.getElementById('endDate').value = data.date_range[1];
-        document.getElementById('configSection').classList.remove('hidden');
-        attachVariableListeners();
-        attachConfigChangeHandlers();
-        statusText.innerHTML = "Dataset Ready.";
-    } catch (err) { statusText.innerHTML = `<span style="color:red">Error: ${err.message}</span>`;
-    } finally { uploadBtn.disabled = false; fileInput.disabled = false; spinner.style.display = "none"; }
-}
-
 async function renderMap(varName) {
     try {
         teardownMap();
+        
+        // Parse dataset prefix (e.g., "DPIRD:wind_3m" or "ECMWF:wind10")
+        const [dataset, actualVar] = varName.includes(':') ? varName.split(':') : ['', varName];
+        
         const payload = {
-            variable: varName,
+            variable: actualVar,
+            dataset: dataset || null,
             start_date: document.getElementById('startDate').value,
             end_date: document.getElementById('endDate').value
         };
+        
+        // Add ECMWF-specific time selection if applicable
+        if (dataset === 'ECMWF' && window.ecmwfTimeInfo) {
+            // Could add UI controls for these later
+            payload.ecmwf_time_idx = 0;  // Forecast reference time index
+            payload.ecmwf_step_idx = 0;  // Forecast step index
+        }
+        
         lastMapRequestBody = payload;
         fillPaintState.enabled = false;
         fillPaintState.values = [];
@@ -647,8 +720,10 @@ async function renderMap(varName) {
         fillPaintState.vMax = null;
         const fillPaintToggle = document.getElementById('fillPaintToggle');
         if (fillPaintToggle) fillPaintToggle.checked = false;
+        
         const res = await fetch('/map_data', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload)
         });
         const d = await res.json();
@@ -665,10 +740,9 @@ async function renderMap(varName) {
         leafletMap.fitBounds(waBounds, { padding: [30, 30] });
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(leafletMap);
 
-        const theme = colorMaps[varName] || colorMaps['default'];
-        const isCombinedWind = (varName === 'wind_3m');
-        const isWindDeg = (varName === 'wind_3m_degN');
-        const isWindSpeed = (varName === 'wind_3m_speed');
+        // Determine if wind variable
+        const isWindVar = actualVar.startsWith('wind') || actualVar === 'wind_3m';
+        const theme = colorMaps[actualVar] || colorMaps['default'];
 
         document.getElementById('color-bar').style.background = theme.gradient;
         document.getElementById('max-val').innerText = d.v_max.toFixed(1);
@@ -677,6 +751,7 @@ async function renderMap(varName) {
         const updateMarkers = (timeIdx) => {
             playback.currentIdx = timeIdx;
             clearPlaybackAttention();
+            
             markers.forEach((m, i) => {
                 const element = m.getElement();
                 if (!element) return;
@@ -685,72 +760,67 @@ async function renderMap(varName) {
                 let speedVal = 0;
                 let angleVal = null;
 
-                if (isCombinedWind) {
+                if (isWindVar) {
                     const speedCandidate = Array.isArray(raw) ? raw[0] : raw;
                     const angleCandidate = Array.isArray(raw) ? raw[1] : null;
                     speedVal = Number.isFinite(speedCandidate) ? speedCandidate : 0;
+                    // Both DPIRD and ECMWF now provide wind TO direction
                     angleVal = Number.isFinite(angleCandidate) ? angleCandidate : 0;
                 } else {
                     speedVal = Number.isFinite(raw) ? raw : 0;
-                    angleVal = isWindDeg ? (Number.isFinite(raw) ? raw : 0) : null;
                 }
 
                 const { pct, color } = computeScalarColor(speedVal, d.v_min, d.v_max);
 
                 const rotator = element.querySelector('.rotator');
                 if (rotator) {
-                    // --- SHORTEST PATH ROTATION LOGIC ---
-                    if (angleVal !== null || isCombinedWind) {
-                        // 1. Calculate the target (subtract 90 to align SVG East to North)
+                    // Wind arrows - shortest path rotation
+                    if (angleVal !== null || isWindVar) {
                         const targetBase = (angleVal !== null) ? angleVal : 0;
-                        const targetAngle = targetBase - 90;
+                        const targetAngle = targetBase - 90; // Align SVG East to North
 
-                        // 2. Get previous total rotation
                         let prevAngle = m._lastAngle || 0;
 
-                        // 3. Calculate shortest difference
                         let diff = (targetAngle - prevAngle) % 360;
                         if (diff > 180) diff -= 360;
                         if (diff < -180) diff += 360;
 
-                        // 4. Update cumulative angle
                         const newAngle = prevAngle + diff;
                         rotator.style.setProperty('--rot', `${newAngle}deg`);
-                        
-                        // 5. Store it back on the marker object
                         m._lastAngle = newAngle;
                     }
 
-                    // --- SCALE & COLOR ---
-                    if (isCombinedWind || isWindSpeed) {
+                    if (isWindVar) {
                         rotator.style.setProperty('--size', 0.5 + (pct * 1.5));
                     }
                     
-                    const paths = element.querySelectorAll('.arrow-fill');
+                    const paths = element.querySelectorAll('.arrow-path');
                     paths.forEach(p => {
                         p.setAttribute('stroke', color);
-                        p.setAttribute('fill', 'none');
                     });
                 } else {
                     const square = element.querySelector('.square-inner');
                     if (square) square.style.backgroundColor = color;
                 }
             });
-            document.getElementById('active-time').innerText = d.time_labels[timeIdx];
-            document.getElementById('timeLabel').innerText = d.time_labels[timeIdx];
+            
+            // Time label with source info
+            const timeLabel = d.time_labels[timeIdx];
+            const sourceLabel = dataset ? `[${dataset}] ` : '';
+            document.getElementById('active-time').innerText = `${sourceLabel}${timeLabel}`;
+            document.getElementById('timeLabel').innerText = timeLabel;
             applyFillColors(timeIdx);
         };
 
-        // Create the markers
+        // Create markers
         markers = d.lats.map((lat, i) => {
             let html = '';
-            if (isCombinedWind || isWindDeg || isWindSpeed) {
-                // Updated SVG for a thin line arrow
+            if (isWindVar) {
                 html = `<div class="rotator">
                     <svg class="arrow-svg" viewBox="0 0 24 24">
                         <g class="arrow-group">
-                            <line x1="3" y1="12" x2="18" y2="12" class="arrow-path arrow-line" />
-                            <polyline points="14 8 18 12 14 16" class="arrow-path arrow-line" />
+                            <line x1="3" y1="12" x2="18" y2="12" class="arrow-path" />
+                            <polyline points="14 8 18 12 14 16" class="arrow-path" />
                         </g>
                     </svg>
                 </div>`;
@@ -758,40 +828,42 @@ async function renderMap(varName) {
                 html = `<div class="square-inner"></div>`;
             }
             
-            const icon = L.divIcon({ className: 'marker-icon', html: html, iconSize: [20,20], iconAnchor:[10,10] });
+            const icon = L.divIcon({ 
+                className: 'marker-icon', 
+                html: html, 
+                iconSize: [20,20], 
+                iconAnchor:[10,10] 
+            });
 
-            const m = L.marker([lat, d.lons[i]], { icon }).addTo(leafletMap).bindPopup(`${d.stations[i]}`);
+            const m = L.marker([lat, d.lons[i]], { icon })
+                .addTo(leafletMap)
+                .bindPopup(`${d.stations[i]}`);
             m._lastAngle = 0;
             return m;
         });
 
         const stationPoints = Array.isArray(d.stations_meta) && d.stations_meta.length
-            ? d.stations_meta.map((p) => {
-                const latCandidate = p && typeof p.lat === 'number' ? p.lat : null;
-                const lonCandidate = p && typeof p.lon === 'number' ? p.lon : null;
-                const stationCandidate = p ? p.station : undefined;
-                return { lat: latCandidate, lon: lonCandidate, station: stationCandidate };
-            })
-            : d.lats.map((lat, idx) => {
-                const lonCandidate = Array.isArray(d.lons) ? d.lons[idx] : undefined;
-                const stationCandidate = Array.isArray(d.stations) ? d.stations[idx] : undefined;
-                return {
-                    lat: typeof lat === 'number' ? lat : null,
-                    lon: typeof lonCandidate === 'number' ? lonCandidate : null,
-                    station: stationCandidate
-                };
-            });
+            ? d.stations_meta.map((p) => ({
+                lat: p && typeof p.lat === 'number' ? p.lat : null,
+                lon: p && typeof p.lon === 'number' ? p.lon : null,
+                station: p ? p.station : undefined
+            }))
+            : d.lats.map((lat, idx) => ({
+                lat: typeof lat === 'number' ? lat : null,
+                lon: typeof d.lons[idx] === 'number' ? d.lons[idx] : null,
+                station: d.stations[idx]
+            }));
 
         const rawHull = d.hull && typeof d.hull === 'object' ? d.hull : {};
         const fillPoints = Array.isArray(d.fill_circles)
             ? d.fill_circles
-                .map((circle) => {
-                    const latCandidate = circle && typeof circle.lat === 'number' ? circle.lat : null;
-                    const lonCandidate = circle && typeof circle.lon === 'number' ? circle.lon : null;
-                    return { lat: latCandidate, lon: lonCandidate };
-                })
+                .map((circle) => ({
+                    lat: circle && typeof circle.lat === 'number' ? circle.lat : null,
+                    lon: circle && typeof circle.lon === 'number' ? circle.lon : null
+                }))
                 .filter(point => typeof point.lat === 'number' && typeof point.lon === 'number')
             : [];
+            
         latestMapCoords = {
             points: stationPoints,
             hull: {
@@ -802,20 +874,16 @@ async function renderMap(varName) {
             },
             fillPoints
         };
+        
         updateVariableDependentUI();
+        
         const radiusToggle = document.getElementById('radiusToggle');
         const borderToggle = document.getElementById('borderToggle');
         const fillToggle = document.getElementById('fillToggle');
-        if (varName === 'airTemperature') {
-            if (radiusToggle && radiusToggle.checked) {
-                updateRadiusOverlays(true);
-            }
-            if (borderToggle && borderToggle.checked) {
-                updateHullOverlay(true);
-            }
-            if (fillToggle && fillToggle.checked) {
-                updateFillOverlays(true);
-            }
+        if (actualVar === 'airTemperature') {
+            if (radiusToggle && radiusToggle.checked) updateRadiusOverlays(true);
+            if (borderToggle && borderToggle.checked) updateHullOverlay(true);
+            if (fillToggle && fillToggle.checked) updateFillOverlays(true);
         }
 
         const slider = document.getElementById('timeSlider');
@@ -830,13 +898,16 @@ async function renderMap(varName) {
         };
 
         initializePlayback(slider, d.time_labels.length, updateMarkers);
-        // Wait a tiny bit for the markers to hit the DOM before the first update
         setTimeout(() => updateMarkers(0), 10);
         
         document.getElementById('timeSliderCard').classList.remove('hidden');
         document.getElementById('empty-state').style.display = 'none';
         document.getElementById('right-ui-stack').style.display = 'flex';
-        document.getElementById('active-var').innerText = varName;
+        
+        // Display variable with source
+        const displayName = dataset ? `${dataset}: ${actualVar}` : actualVar;
+        document.getElementById('active-var').innerText = displayName;
+        
     } catch (err) { 
         console.error(err);
         document.getElementById('status-text').innerText = err.message;
@@ -852,17 +923,48 @@ async function renderMap(varName) {
 async function renderGraph(datasetVar, displayLabel) {
     try {
         teardownMap();
+        
         const res = await fetch('/plot', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ variables: [datasetVar], station: document.getElementById('stationDropdown').value, start_date: document.getElementById('startDate').value, end_date: document.getElementById('endDate').value })
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ 
+                variables: [datasetVar], 
+                station: document.getElementById('stationDropdown').value, 
+                start_date: document.getElementById('startDate').value, 
+                end_date: document.getElementById('endDate').value 
+            })
         });
+        
+        if (!res.ok) {
+            const errorText = await res.text();
+            let errorMsg;
+            try {
+                const errorData = JSON.parse(errorText);
+                errorMsg = errorData.error || 'Unknown error';
+            } catch {
+                errorMsg = errorText || 'Server error';
+            }
+            throw new Error(errorMsg);
+        }
+        
         const d = await res.json();
         if (d.error) throw new Error(d.error);
-        const series = d[datasetVar];
+        
+        // Parse the actual variable name (without dataset prefix)
+        const actualVar = datasetVar.includes(':') ? datasetVar.split(':')[1] : datasetVar;
+        const series = d[actualVar];
+        
         if (!series) throw new Error('No series returned for selection.');
+        
         document.getElementById('empty-state').style.display = 'none';
         document.getElementById('timeSliderCard').classList.add('hidden');
-        Plotly.newPlot('target-area', [{ x: series.x, y: series.y, type: 'scatter', mode: 'lines+markers', name: displayLabel }], { title: displayLabel });
+        Plotly.newPlot('target-area', [{ 
+            x: series.x, 
+            y: series.y, 
+            type: 'scatter', 
+            mode: 'lines+markers', 
+            name: displayLabel 
+        }], { title: displayLabel });
         document.getElementById('right-ui-stack').style.display = 'none';
     } catch (err) { 
         console.error(err);
@@ -876,19 +978,29 @@ async function runVisualization() {
     const mode = document.getElementById('viewMode').value;
     const varName = document.querySelector('input[name="vItem"]:checked')?.value;
     if(!varName) return alert("Select a variable!");
-    let datasetVar = varName;
-    let displayLabel = varName;
-    if (mode === 'graph' && varName === 'wind_3m') {
+    
+    // Parse dataset and variable
+    const [dataset, actualVar] = varName.includes(':') ? varName.split(':') : ['', varName];
+    
+    let datasetVar = actualVar;
+    let displayLabel = `${dataset ? dataset + ': ' : ''}${actualVar}`;
+    
+    // Handle DPIRD wind component selection for graph view
+    if (mode === 'graph' && actualVar === 'wind_3m' && dataset === 'DPIRD') {
         const component = document.querySelector('input[name="windComponent"]:checked')?.value || 'speed';
         if (component === 'angle') {
             datasetVar = 'wind_3m_degN';
-            displayLabel = 'Wind Direction (degN)';
+            displayLabel = 'DPIRD: Wind Direction (degN)';
         } else {
             datasetVar = 'wind_3m_speed';
-            displayLabel = 'Wind Speed (3m)';
+            displayLabel = 'DPIRD: Wind Speed (3m)';
         }
     }
+    
     document.getElementById('empty-state').style.display = 'flex';
-    if (mode === 'map') await renderMap(varName);
-    else await renderGraph(datasetVar, displayLabel);
+    if (mode === 'map') {
+        await renderMap(varName);
+    } else {
+        await renderGraph(datasetVar, displayLabel);
+    }
 }
