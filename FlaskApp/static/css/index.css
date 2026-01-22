@@ -24,6 +24,20 @@ body { font-family: 'Inter', system-ui, sans-serif; margin: 0; display: flex; he
     justify-content: center;
 }
 
+/* Make the Date Range selects sit side by side */
+#ecmwfConfigCard .row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+}
+
+#ecmwfConfigCard .row select {
+    flex: 1;
+    width: auto;      /* override the global width:100% */
+    margin-bottom: 0; /* remove extra bottom space in the row */
+}
+
 .square-inner { border: 1px solid white; box-shadow: 0 0 3px rgba(0,0,0,0.3); width: 14px; height: 14px; }
 
 /* Thin Line Arrow Styling */

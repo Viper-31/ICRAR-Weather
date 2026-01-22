@@ -10,32 +10,44 @@
 </head>
 <body>
     <aside id="sidebar">
-        <h1 class="sidebar-title">Weather Visualisation</h1>
         <div class="section-card">
-            <span class="label-sm">1. Data Source</span>
-            <input type="file" id="fileInput" accept=".nc">
-            <button id="uploadBtn" onclick="uploadFile()">Upload NetCDF</button>
+            <label class="label-sm" for="dataMode">Data Mode</label>
+            <select id="dataMode" onchange="onDataModeChange()">
+                <option value="dpird" selected>DPIRD</option>
+                <option value="ecmwf">ECMWF</option>
+            </select>
         </div>
-
-        <div id="configSection" class="hidden">
+        <h1 class="sidebar-title">Weather Visualisation</h1>
+        <div id="dpirdSidebar">
             <div class="section-card">
+                <span class="label-sm">1. Data Source</span>
+                <input type="file" id="fileInput" accept=".nc" aria-label="Upload DPIRD NetCDF file">
+                <button id="uploadBtn" onclick="uploadFile()">Upload NetCDF</button>
+            </div>
+
+            <div id="configSection" class="hidden">
+                <div class="section-card">
                 <span class="label-sm">2. Mode & Time</span>
+                <label class="sr-only" for="viewMode">View mode</label>
                 <select id="viewMode" onchange="toggleViewUI()">
                     <option value="map">🗺️ Map View</option>
                     <option value="graph">📈 Graph</option>
                 </select>
+                <label class="sr-only" for="startDate">Start date</label>
                 <input type="date" id="startDate">
+                <label class="sr-only" for="endDate">End date</label>
                 <input type="date" id="endDate">
+                <div id="dateError" class="field-error" aria-live="polite"></div>
             </div>
 
-            <div id="timeSliderCard" class="section-card hidden">
+                <div id="timeSliderCard" class="section-card hidden">
                 <span class="label-sm">3. Timeline Control</span>
                 <input type="range" id="timeSlider" min="0" value="0">
                 <div id="timeLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">Step: 0</div>
             </div>
 
             <div id="stationSelector" class="section-card hidden">
-                <span class="label-sm">Station Selection</span>
+                <label class="label-sm" for="stationDropdown">Station Selection</label>
                 <select id="stationDropdown"></select>
             </div>
 
@@ -74,12 +86,49 @@
                 <span class="label-sm">Variable Selection</span>
                 <div id="varStack" class="var-stack"></div>
             </div>
-            <button onclick="runVisualization()" style="background: #0ea5e9;">Render Data</button>
+            <button id="renderBtn" onclick="runVisualization()" style="background: #0ea5e9;" disabled>Render Data</button>
+        </div>
+        </div>
+
+        <div id="ecmwfSidebar" style="display:none; margin-top: 10px;">
+            <div class="section-card">
+                <span class="label-sm">1. Data Source</span>
+                <input type="file" id="ecmwfFileInput" accept=".nc" aria-label="Upload ECMWF NetCDF file">
+                <button id="ecmwfUploadBtn" onclick="uploadEcmwfFile()">Choose ECMWF NetCDF</button>
+            </div>
+            <div id="ecmwfConfigCard" class="section-card hidden">
+                <span class="label-sm">2. ECMWF Configuration</span>
+                <label class="label-sm" style="margin-top:6px;" for="ecmwfVarSelect">Variable</label>
+                <select id="ecmwfVarSelect"></select>
+                <label class="label-sm" style="margin-top:6px;">Date Range</label>
+                    <label class="sr-only" for="ecmwfStartSelect">Start date</label>
+                    <select id="ecmwfStartSelect"></select>
+                    <label class="sr-only" for="ecmwfEndSelect">End date</label>
+                    <select id="ecmwfEndSelect"></select>
+            </div>
+            <div id="ecmwfTimeCard" class="section-card hidden">
+                <span class="label-sm">3. Forecast Reference Time</span>
+                <input type="range" id="ecmwfTimeSlider" min="0" value="0" aria-label="ECMWF forecast time index">
+                <div id="ecmwfTimeLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">T[0]</div>
+            </div>
+            <div id="ecmwfStepCard" class="section-card hidden">
+                <span class="label-sm">4. Step (+hours)</span>
+                <input type="range" id="ecmwfStepSlider" min="0" value="0" aria-label="ECMWF forecast lead time in hours">
+                <div id="ecmwfStepLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">+0 h</div>
+            </div>
+            <div id="ecmwfViewModeCard" class="section-card hidden">
+                <span class="label-sm">5. View Mode</span>
+                <label class="var-row" style="justify-content: space-between;">
+                    <span>Show contours (no OSM map)</span>
+                    <input type="checkbox" id="ecmwfContourToggle">
+                </label>
+            </div>
+            <button id="ecmwfRenderBtn" onclick="runEcmwfVisualization()" style="background: #0ea5e9; margin-top: 8px;">Render ECMWF</button>
         </div>
     </aside>
 
     <main id="main-content">
-        <div id="viz-container">
+        <div id="viz-container" aria-busy="false">
             <div id="empty-state">
                 <div id="spinner" class="spinner" style="display:none;"></div>
                 <p id="status-text">Waiting for data...</p>

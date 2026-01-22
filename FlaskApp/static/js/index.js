@@ -1,3 +1,11 @@
+let appMode = 'dpird'; // 'dpird' or 'ecmwf'
+const dpirdViewState = {
+    mode: null,          // 'map' or 'graph'
+    varName: null,       // DPIRD logical variable (e.g. 'airTemperature' or 'wind_3m')
+    datasetVar: null,    // Underlying dataset var used for graph
+    displayLabel: null,  // Graph label
+    timeIdx: 0           // Last timeline index for map mode
+};
 let leafletMap = null;
 let markers = [];
 let radiusLayers = [];
@@ -24,6 +32,178 @@ const colorMaps = {
     'wind_3m_degN': { scale: 'Hsv', gradient: 'linear-gradient(to right, red, yellow, green, blue, red)' },
     'default': { scale: 'Viridis', gradient: 'linear-gradient(to top, #440154, #218f8d, #fde725)' }
 };
+// ECMWF colormap mappings (approximate equivalents of the Python mappings)
+const ECMWF_VAR_CMAPS = {
+    t2m: 'coolwarm',
+    d2m: 'coolwarm',
+    msl: 'Spectral_r',
+    sh2: 'GnBu',
+    swvl1: 'YlGnBu',
+    cp: 'Purples',
+    tp: 'Blues',
+    lsp: 'GnBu',
+    i10fg: 'Reds',
+    tcc: 'Greys_trunc',
+    lcc: 'Greys_trunc',
+    mcc: 'Greys_trunc',
+    hcc: 'Greys_trunc'
+};
+
+const ECMWF_PREFIX_CMAPS = {
+    z: 'copper',
+    t: 'coolwarm',
+    r: 'YlGnBu',
+    q: 'GnBu',
+    w: 'RdBu_r'
+};
+
+// Gradient definitions (CSS) and colour stops (for marker/overlay colouring)
+const ECMWF_CMAP_DEFS = {
+    coolwarm: {
+        gradient: 'linear-gradient(to top, #0022ff, #ff0000)',
+        stops: [
+            { pos: 0.0, color: [59, 76, 192] },
+            { pos: 1.0, color: [180, 4, 38] }
+        ]
+    },
+    Spectral_r: {
+        gradient: 'linear-gradient(to top, #5e4fa2, #3288bd, #66c2a5, #fdae61, #d53e4f, #9e0142)',
+        stops: [
+            { pos: 0.0, color: [94, 79, 162] },
+            { pos: 0.25, color: [50, 136, 189] },
+            { pos: 0.5, color: [102, 194, 165] },
+            { pos: 0.75, color: [253, 174, 97] },
+            { pos: 1.0, color: [158, 1, 66] }
+        ]
+    },
+    GnBu: {
+        gradient: 'linear-gradient(to top, #f7fcf0, #7bccc4, #084081)',
+        stops: [
+            { pos: 0.0, color: [247, 252, 240] },
+            { pos: 0.5, color: [123, 204, 196] },
+            { pos: 1.0, color: [8, 64, 129] }
+        ]
+    },
+    YlGnBu: {
+        gradient: 'linear-gradient(to top, #ffffd9, #41b6c4, #081d58)',
+        stops: [
+            { pos: 0.0, color: [255, 255, 217] },
+            { pos: 0.5, color: [65, 182, 196] },
+            { pos: 1.0, color: [8, 29, 88] }
+        ]
+    },
+    Purples: {
+        gradient: 'linear-gradient(to top, #f2f0f7, #9e9ac8, #3f007d)',
+        stops: [
+            { pos: 0.0, color: [242, 240, 247] },
+            { pos: 0.5, color: [158, 154, 200] },
+            { pos: 1.0, color: [63, 0, 125] }
+        ]
+    },
+    Blues: {
+        gradient: 'linear-gradient(to top, #eff3ff, #6baed6, #08519c)',
+        stops: [
+            { pos: 0.0, color: [239, 243, 255] },
+            { pos: 0.5, color: [107, 174, 214] },
+            { pos: 1.0, color: [8, 81, 156] }
+        ]
+    },
+    Reds: {
+        gradient: 'linear-gradient(to top, #fee0d2, #fc9272, #cb181d)',
+        stops: [
+            { pos: 0.0, color: [254, 224, 210] },
+            { pos: 0.5, color: [252, 146, 114] },
+            { pos: 1.0, color: [203, 24, 29] }
+        ]
+    },
+    copper: {
+        gradient: 'linear-gradient(to top, #000000, #b87333, #ffdead)',
+        stops: [
+            { pos: 0.0, color: [0, 0, 0] },
+            { pos: 0.5, color: [184, 115, 51] },
+            { pos: 1.0, color: [255, 222, 173] }
+        ]
+    },
+    RdBu_r: {
+        gradient: 'linear-gradient(to top, #053061, #2166ac, #f7f7f7, #b2182b, #67001f)',
+        stops: [
+            { pos: 0.0, color: [5, 48, 97] },
+            { pos: 0.5, color: [247, 247, 247] },
+            { pos: 1.0, color: [103, 0, 31] }
+        ]
+    },
+    Greys_trunc: {
+        gradient: 'linear-gradient(to top, #f7f7f7, #bdbdbd, #636363)',
+        stops: [
+            { pos: 0.0, color: [247, 247, 247] },
+            { pos: 0.5, color: [189, 189, 189] },
+            { pos: 1.0, color: [99, 99, 99] }
+        ]
+    },
+    viridis: {
+        gradient: 'linear-gradient(to top, #440154, #218f8d, #fde725)',
+        stops: [
+            { pos: 0.0, color: [68, 1, 84] },
+            { pos: 0.5, color: [33, 143, 141] },
+            { pos: 1.0, color: [253, 231, 37] }
+        ]
+    }
+};
+
+function getEcmwfCmapName(varName) {
+    if (!varName) return 'viridis';
+    if (Object.prototype.hasOwnProperty.call(ECMWF_VAR_CMAPS, varName)) {
+        return ECMWF_VAR_CMAPS[varName];
+    }
+    const prefixes = Object.keys(ECMWF_PREFIX_CMAPS);
+    for (let i = 0; i < prefixes.length; i++) {
+        const p = prefixes[i];
+        if (varName.startsWith(p)) {
+            return ECMWF_PREFIX_CMAPS[p];
+        }
+    }
+    return 'viridis';
+}
+
+function getEcmwfCmapDef(name) {
+    return ECMWF_CMAP_DEFS[name] || ECMWF_CMAP_DEFS.viridis;
+}
+
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
+function sampleEcmwfColormap(pct, cmapName) {
+    const t = clamp01(pct);
+    const def = getEcmwfCmapDef(cmapName);
+    const stops = def.stops;
+    if (!Array.isArray(stops) || !stops.length) {
+        const c = [255 * t, 255 * t, 255 * t];
+        return `rgb(${Math.round(c[0])}, ${Math.round(c[1])}, ${Math.round(c[2])})`;
+    }
+    if (t <= stops[0].pos) {
+        const c = stops[0].color;
+        return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+    }
+    if (t >= stops[stops.length - 1].pos) {
+        const c = stops[stops.length - 1].color;
+        return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+    }
+    for (let i = 0; i < stops.length - 1; i++) {
+        const a = stops[i];
+        const b = stops[i + 1];
+        if (t >= a.pos && t <= b.pos) {
+            const span = (b.pos - a.pos) || 1;
+            const localT = (t - a.pos) / span;
+            const r = lerp(a.color[0], b.color[0], localT);
+            const g = lerp(a.color[1], b.color[1], localT);
+            const bch = lerp(a.color[2], b.color[2], localT);
+            return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(bch)})`;
+        }
+    }
+    const c = stops[stops.length - 1].color;
+    return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+}
 const WA_BOUNDS = [[-36.0, 110.0], [-10.0, 135.0]]; // Lat/Lon bounds covering WA with margin
 const WA_BOUNDS_PADDING = 0.05; // extra padding for max bounds
 const PLAYBACK_DELAY_MS = 500;
@@ -46,6 +226,137 @@ const playback = {
     updateMarkers: null
 };
 let configListenersAttached = false;
+const ecmwfState = {
+    timeLabels: [],
+    vMin: null,
+    vMax: null,
+    currentIdx: 0,
+    layer: null,
+    variables: [],
+    currentVar: null,
+    rangeStart: 0,
+    rangeEnd: 0,
+    dateLabels: [],
+    dateStartIndices: [],
+    dateEndIndices: [],
+    stepValues: [],
+    timeCount: 0,
+    stepCount: 0,
+    timeIndex: 0,
+    stepIndex: 0,
+    useContours: false,
+    hasFitted: false,
+    heatLayer: null,
+    cmapName: 'viridis'
+};
+
+function setLoading(isLoading, message) {
+    const spinner = document.getElementById('spinner');
+    const statusText = document.getElementById('status-text');
+    const viz = document.getElementById('viz-container');
+    if (spinner) spinner.style.display = isLoading ? 'block' : 'none';
+    if (viz) viz.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+    if (statusText && typeof message === 'string') {
+        statusText.innerText = message;
+    }
+}
+
+function setDateError(message) {
+    const errEl = document.getElementById('dateError');
+    if (!errEl) return;
+    errEl.textContent = message || '';
+}
+
+function validateDpirdConfig() {
+    const renderBtn = document.getElementById('renderBtn');
+    if (!renderBtn) return;
+    const modeSel = document.getElementById('viewMode');
+    const startInput = document.getElementById('startDate');
+    const endInput = document.getElementById('endDate');
+    const stationSelect = document.getElementById('stationDropdown');
+    const mode = modeSel ? modeSel.value : 'map';
+    const startVal = startInput ? startInput.value : '';
+    const endVal = endInput ? endInput.value : '';
+    const stationVal = stationSelect ? stationSelect.value : '';
+    const varSelected = !!document.querySelector('input[name="vItem"]:checked');
+
+    let dateValid = !!startVal && !!endVal;
+    if (dateValid && startVal > endVal) {
+        dateValid = false;
+    }
+    if (!dateValid && startVal && endVal) {
+        setDateError('End date must be on or after start date.');
+    } else {
+        setDateError('');
+    }
+
+    const stationRequired = mode === 'graph';
+    const stationValid = !stationRequired || !!stationVal;
+
+    const ok = varSelected && dateValid && stationValid;
+    renderBtn.disabled = !ok;
+}
+
+function setAppMode(mode) {
+    const prevMode = appMode;
+    appMode = mode;
+    const dpirdSidebar = document.getElementById('dpirdSidebar');
+    const ecmwfSidebar = document.getElementById('ecmwfSidebar');
+    if (dpirdSidebar) {
+        dpirdSidebar.style.display = (mode === 'dpird') ? '' : 'none';
+    }
+    if (ecmwfSidebar) {
+        ecmwfSidebar.style.display = (mode === 'ecmwf') ? '' : 'none';
+    }
+
+    const statusText = document.getElementById('status-text');
+
+    // If we are leaving DPIRD, snapshot its visual state then reset map/plot
+    if (prevMode === 'dpird' && mode === 'ecmwf') {
+        if (dpirdViewState.mode === 'map') {
+            dpirdViewState.timeIdx = playback.currentIdx || 0;
+        }
+        teardownMap();
+        if (rightUi) rightUi.style.display = 'none';
+        if (statusText) {
+            statusText.innerText = 'ECMWF mode selected. Waiting for ECMWF configuration...';
+        }
+        // If we already have an ECMWF dataset loaded, restore its view
+        if (ecmwfState.timeLabels.length) {
+            setupEcmwfMap({
+                time_labels: ecmwfState.timeLabels
+            }, true);
+        }
+        return;
+    }
+
+    // If we are returning to DPIRD, restore its previous visualisation if any
+    if (prevMode === 'ecmwf' && mode === 'dpird') {
+        if (statusText && statusText.innerText.startsWith('ECMWF mode selected')) {
+            statusText.innerText = 'Waiting for data...';
+        }
+        // Only attempt restore if we have a remembered state
+        if (dpirdViewState.mode === 'map' && dpirdViewState.varName) {
+            // Re-render map and restore timeline position
+            renderMap(dpirdViewState.varName).then(() => {
+                const idx = Math.max(0, Math.min(dpirdViewState.timeIdx || 0, (playback.totalSteps || 1) - 1));
+                if (playback.slider && typeof playback.updateMarkers === 'function') {
+                    playback.slider.value = idx;
+                    playback.updateMarkers(idx);
+                }
+            }).catch(err => console.error(err));
+        } else if (dpirdViewState.mode === 'graph' && dpirdViewState.datasetVar && dpirdViewState.displayLabel) {
+            renderGraph(dpirdViewState.datasetVar, dpirdViewState.displayLabel).catch(err => console.error(err));
+        }
+        return;
+    }
+}
+
+function onDataModeChange() {
+    const select = document.getElementById('dataMode');
+    const mode = select ? select.value : 'dpird';
+    setAppMode(mode);
+}
 
 function clamp01(value) {
     if (!Number.isFinite(value)) return 0;
@@ -436,6 +747,7 @@ function handleConfigChange() {
     fillPaintState.vMax = null;
     lastMapRequestBody = null;
     latestMapCoords = createDefaultMapState();
+    validateDpirdConfig();
 }
 
 function attachConfigChangeHandlers() {
@@ -443,9 +755,39 @@ function attachConfigChangeHandlers() {
     const startInput = document.getElementById('startDate');
     const endInput = document.getElementById('endDate');
     const stationSelect = document.getElementById('stationDropdown');
-    if (startInput) startInput.addEventListener('change', handleConfigChange);
-    if (endInput) endInput.addEventListener('change', handleConfigChange);
-    if (stationSelect) stationSelect.addEventListener('change', handleConfigChange);
+    if (startInput) {
+        startInput.addEventListener('change', handleConfigChange);
+        startInput.addEventListener('blur', validateDpirdConfig);
+        startInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                validateDpirdConfig();
+                const btn = document.getElementById('renderBtn');
+                if (btn && !btn.disabled) runVisualization();
+            }
+        });
+    }
+    if (endInput) {
+        endInput.addEventListener('change', handleConfigChange);
+        endInput.addEventListener('blur', validateDpirdConfig);
+        endInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                validateDpirdConfig();
+                const btn = document.getElementById('renderBtn');
+                if (btn && !btn.disabled) runVisualization();
+            }
+        });
+    }
+    if (stationSelect) {
+        stationSelect.addEventListener('change', handleConfigChange);
+        stationSelect.addEventListener('blur', validateDpirdConfig);
+        stationSelect.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                validateDpirdConfig();
+                const btn = document.getElementById('renderBtn');
+                if (btn && !btn.disabled) runVisualization();
+            }
+        });
+    }
     document.querySelectorAll('input[name="windComponent"]').forEach(r => r.addEventListener('change', handleConfigChange));
     const radiusToggle = document.getElementById('radiusToggle');
     if (radiusToggle) {
@@ -577,9 +919,11 @@ function attachVariableListeners() {
         radio.addEventListener('change', () => {
             handleConfigChange();
             updateVariableDependentUI();
+            validateDpirdConfig();
         });
     });
     updateVariableDependentUI();
+    validateDpirdConfig();
 }
 
 function toggleViewUI() {
@@ -599,26 +943,24 @@ function toggleViewUI() {
     document.getElementById('empty-state').style.display = 'flex';
     document.getElementById('spinner').style.display = 'none';
     document.getElementById('status-text').innerText = 'Waiting for data...';
+    validateDpirdConfig();
     updateVariableDependentUI();
 }
 
 async function uploadFile() {
     const fileInput = document.getElementById('fileInput');
     const uploadBtn = document.getElementById('uploadBtn');
-    const statusText = document.getElementById('status-text');
-    const spinner = document.getElementById('spinner');
     if(!fileInput.files[0]) return;
 
     fileInput.disabled = true;
     uploadBtn.disabled = true;
-    spinner.style.display = "block";
-    statusText.innerHTML = `Processing <b>${fileInput.files[0].name}</b>...`;
+    setLoading(true, `Processing ${fileInput.files[0].name}...`);
 
     const fd = new FormData(); fd.append('file', fileInput.files[0]);
     try {
         const res = await fetch('/upload', { method: 'POST', body: fd });
         const data = await res.json();
-        if (data.error) throw new Error(data.error);
+        if (!res.ok || data.error) throw new Error(data.error || 'Upload failed');
         document.getElementById('varStack').innerHTML = data.variables.map(v => `
             <label class="var-row"><input type="radio" name="vItem" value="${v}"> ${v}</label>`).join('');
         document.getElementById('stationDropdown').innerHTML = data.stations.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -627,18 +969,65 @@ async function uploadFile() {
         document.getElementById('configSection').classList.remove('hidden');
         attachVariableListeners();
         attachConfigChangeHandlers();
-        statusText.innerHTML = "Dataset Ready.";
-    } catch (err) { statusText.innerHTML = `<span style="color:red">Error: ${err.message}</span>`;
-    } finally { uploadBtn.disabled = false; fileInput.disabled = false; spinner.style.display = "none"; }
+        validateDpirdConfig();
+        setLoading(false, 'Dataset ready. Choose a variable and view.');
+    } catch (err) {
+        console.error(err);
+        setLoading(false, `Error loading dataset: ${err.message}`);
+    } finally {
+        uploadBtn.disabled = false;
+        fileInput.disabled = false;
+    }
+}
+
+async function uploadEcmwfFile() {
+    if (appMode !== 'ecmwf') return;
+    const input = document.getElementById('ecmwfFileInput');
+    if (!input || !input.files || !input.files[0]) return;
+
+    const file = input.files[0];
+    setLoading(true, `Loading ECMWF file: ${file.name}...`);
+
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+        const res = await fetch('/ecmwf_upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || 'Upload failed');
+
+        ecmwfState.timeLabels = Array.isArray(data.time_labels) ? data.time_labels : [];
+        ecmwfState.stepValues = Array.isArray(data.step_values) ? data.step_values : [];
+        ecmwfState.timeCount = typeof data.time_count === 'number' ? data.time_count : ecmwfState.timeLabels.length;
+        ecmwfState.stepCount = typeof data.step_count === 'number' ? data.step_count : ecmwfState.stepValues.length;
+        ecmwfState.timeIndex = 0;
+        ecmwfState.stepIndex = 0;
+        ecmwfState.rangeStart = 0;
+        ecmwfState.rangeEnd = Math.max(0, ecmwfState.timeLabels.length - 1);
+
+        setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, false);
+        initEcmwfConfigUi(data);
+        setLoading(false, 'ECMWF dataset loaded. Configure options and click Render.');
+    } catch (err) {
+        console.error(err);
+        setLoading(false, `ECMWF error: ${err.message}`);
+    } finally {
+    }
 }
 
 async function renderMap(varName) {
+    if (appMode !== 'dpird') return; // Map rendering currently only for DPIRD mode
     try {
         teardownMap();
+        const start_date = document.getElementById('startDate').value;
+        const end_date = document.getElementById('endDate').value;
+        const mode = 'map';
         const payload = {
             variable: varName,
-            start_date: document.getElementById('startDate').value,
-            end_date: document.getElementById('endDate').value
+            start_date,
+            end_date,
+            station: null,
+            mode,
+            extra_options: {}
         };
         lastMapRequestBody = payload;
         fillPaintState.enabled = false;
@@ -647,12 +1036,13 @@ async function renderMap(varName) {
         fillPaintState.vMax = null;
         const fillPaintToggle = document.getElementById('fillPaintToggle');
         if (fillPaintToggle) fillPaintToggle.checked = false;
+        setLoading(true, 'Rendering map view...');
         const res = await fetch('/map_data', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload)
         });
         const d = await res.json();
-        if (d.error) throw new Error(d.error);
+        if (!res.ok || d.error) throw new Error(d.error || 'Map request failed');
 
         if (leafletMap) leafletMap.remove();
 
@@ -739,6 +1129,7 @@ async function renderMap(varName) {
             document.getElementById('active-time').innerText = d.time_labels[timeIdx];
             document.getElementById('timeLabel').innerText = d.time_labels[timeIdx];
             applyFillColors(timeIdx);
+            dpirdViewState.timeIdx = timeIdx;
         };
 
         // Create the markers
@@ -837,10 +1228,17 @@ async function renderMap(varName) {
         document.getElementById('empty-state').style.display = 'none';
         document.getElementById('right-ui-stack').style.display = 'flex';
         document.getElementById('active-var').innerText = varName;
+
+        // Remember DPIRD view state for restoring after mode switches
+        dpirdViewState.mode = 'map';
+        dpirdViewState.varName = varName;
+        dpirdViewState.datasetVar = null;
+        dpirdViewState.displayLabel = null;
+        dpirdViewState.timeIdx = 0;
+        setLoading(false, 'Map ready. Use the timeline to explore.');
     } catch (err) { 
         console.error(err);
-        document.getElementById('status-text').innerText = err.message;
-        document.getElementById('spinner').style.display = 'none';
+        setLoading(false, err.message || 'Error rendering map');
         clearRadiusOverlays();
         clearHullOverlay();
         clearFillOverlays();
@@ -850,29 +1248,53 @@ async function renderMap(varName) {
 }
 
 async function renderGraph(datasetVar, displayLabel) {
+    if (appMode !== 'dpird') return; // Graph rendering currently only for DPIRD mode
     try {
         teardownMap();
+        const start_date = document.getElementById('startDate').value;
+        const end_date = document.getElementById('endDate').value;
+        const station = document.getElementById('stationDropdown').value;
+        const payload = {
+            variable: datasetVar,
+            start_date,
+            end_date,
+            station,
+            mode: 'graph',
+            extra_options: {}
+        };
+        setLoading(true, 'Rendering graph view...');
         const res = await fetch('/plot', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ variables: [datasetVar], station: document.getElementById('stationDropdown').value, start_date: document.getElementById('startDate').value, end_date: document.getElementById('endDate').value })
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         });
         const d = await res.json();
-        if (d.error) throw new Error(d.error);
+        if (!res.ok || d.error) throw new Error(d.error || 'Plot request failed');
         const series = d[datasetVar];
         if (!series) throw new Error('No series returned for selection.');
         document.getElementById('empty-state').style.display = 'none';
         document.getElementById('timeSliderCard').classList.add('hidden');
         Plotly.newPlot('target-area', [{ x: series.x, y: series.y, type: 'scatter', mode: 'lines+markers', name: displayLabel }], { title: displayLabel });
         document.getElementById('right-ui-stack').style.display = 'none';
+        
+        // Remember DPIRD graph state for restoring after mode switches
+        dpirdViewState.mode = 'graph';
+        dpirdViewState.varName = datasetVar;
+        dpirdViewState.datasetVar = datasetVar;
+        dpirdViewState.displayLabel = displayLabel;
+        dpirdViewState.timeIdx = 0;
+        setLoading(false, 'Graph ready.');
     } catch (err) { 
         console.error(err);
-        document.getElementById('spinner').style.display = 'none';
-        document.getElementById('status-text').innerText = err.message;
+        setLoading(false, err.message || 'Error rendering graph');
         document.getElementById('empty-state').style.display = 'flex';
     }
 }
 
 async function runVisualization() {
+    if (appMode !== 'dpird') {
+        alert('Rendering is only available in DPIRD mode right now.');
+        return;
+    }
     const mode = document.getElementById('viewMode').value;
     const varName = document.querySelector('input[name="vItem"]:checked')?.value;
     if(!varName) return alert("Select a variable!");
@@ -891,4 +1313,508 @@ async function runVisualization() {
     document.getElementById('empty-state').style.display = 'flex';
     if (mode === 'map') await renderMap(varName);
     else await renderGraph(datasetVar, displayLabel);
+}
+
+async function runEcmwfVisualization() {
+    if (appMode !== 'ecmwf') {
+        alert('ECMWF rendering is only available in ECMWF mode.');
+        return;
+    }
+    setLoading(true, 'Preparing ECMWF view...');
+    await updateEcmwfConfigFromUi();
+    // Draw a frame using current time/step slider positions after configuration
+    const timeSlider = document.getElementById('ecmwfTimeSlider');
+    const stepSlider = document.getElementById('ecmwfStepSlider');
+    let tIdx = timeSlider ? parseInt(timeSlider.value, 10) : 0;
+    let sIdx = stepSlider ? parseInt(stepSlider.value, 10) : 0;
+    if (!Number.isFinite(tIdx)) tIdx = 0;
+    if (!Number.isFinite(sIdx)) sIdx = 0;
+    const contourToggle = document.getElementById('ecmwfContourToggle');
+    const useContours = contourToggle ? !!contourToggle.checked : false;
+    ecmwfState.useContours = useContours;
+    if (useContours) {
+        if (!leafletMap && ecmwfState.timeLabels.length) {
+            setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
+        }
+        await renderEcmwfContourPlot(tIdx, sIdx);
+    } else {
+        if (!leafletMap && ecmwfState.timeLabels.length) {
+            setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
+        }
+        if (ecmwfState.heatLayer && leafletMap && leafletMap.hasLayer(ecmwfState.heatLayer)) {
+            leafletMap.removeLayer(ecmwfState.heatLayer);
+        }
+        await requestEcmwfContours(tIdx, sIdx);
+    }
+    setLoading(false, '');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const modeSelect = document.getElementById('dataMode');
+    if (modeSelect) {
+        setAppMode(modeSelect.value || 'dpird');
+    }
+    const contourToggle = document.getElementById('ecmwfContourToggle');
+    if (contourToggle) {
+        contourToggle.addEventListener('change', (e) => {
+            ecmwfState.useContours = !!e.target.checked;
+            const timeSlider = document.getElementById('ecmwfTimeSlider');
+            const stepSlider = document.getElementById('ecmwfStepSlider');
+            let tIdx = timeSlider ? parseInt(timeSlider.value, 10) : (ecmwfState.timeIndex || 0);
+            let sIdx = stepSlider ? parseInt(stepSlider.value, 10) : (ecmwfState.stepIndex || 0);
+            if (!Number.isFinite(tIdx)) tIdx = 0;
+            if (!Number.isFinite(sIdx)) sIdx = 0;
+            if (ecmwfState.useContours) {
+                if (!leafletMap && ecmwfState.timeLabels.length) {
+                    setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
+                }
+                renderEcmwfContourPlot(tIdx, sIdx);
+            } else if (ecmwfState.timeLabels.length) {
+                if (!leafletMap) {
+                    setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
+                }
+                if (ecmwfState.heatLayer && leafletMap && leafletMap.hasLayer(ecmwfState.heatLayer)) {
+                    leafletMap.removeLayer(ecmwfState.heatLayer);
+                }
+                requestEcmwfContours(tIdx, sIdx);
+            }
+        });
+    }
+});
+
+function createEcmwfColor(value) {
+    if (!Number.isFinite(value) || ecmwfState.vMin === null || ecmwfState.vMax === null) {
+        return 'rgb(148, 163, 184)';
+    }
+    const range = (ecmwfState.vMax - ecmwfState.vMin) || 1;
+    const pct = (value - ecmwfState.vMin) / range;
+    const cmap = ecmwfState.cmapName || 'viridis';
+    return sampleEcmwfColormap(pct, cmap);
+}
+
+async function renderEcmwfContourPlot(timeIndex, stepIndex) {
+    const statusText = document.getElementById('status-text');
+    try {
+        const body = {
+            var_name: ecmwfState.currentVar,
+            time_index: timeIndex,
+            step_index: stepIndex,
+            stride: 1
+        };
+        const res = await fetch('/ecmwf_field', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || 'ECMWF field request failed');
+
+        ecmwfState.timeIndex = timeIndex;
+        ecmwfState.stepIndex = stepIndex;
+
+        const label = data.time_label || `T[${timeIndex}] +S[${stepIndex}]`;
+        const timeLabelEl = document.getElementById('ecmwfTimeLabel');
+        if (timeLabelEl) timeLabelEl.innerText = label;
+        const activeTime = document.getElementById('active-time');
+        if (activeTime) activeTime.innerText = label;
+        if (statusText) statusText.innerText = label;
+
+        const activeVar = document.getElementById('active-var');
+        if (activeVar) activeVar.innerText = ecmwfState.currentVar || 'ECMWF';
+        if (!leafletMap) return;
+
+        // Remove any existing ECMWF point layer when drawing the heat overlay
+        if (ecmwfState.layer && leafletMap.hasLayer(ecmwfState.layer)) {
+            leafletMap.removeLayer(ecmwfState.layer);
+            ecmwfState.layer = null;
+        }
+
+        const lat = Array.isArray(data.lat) ? data.lat : [];
+        const lon = Array.isArray(data.lon) ? data.lon : [];
+        const z = Array.isArray(data.z) ? data.z : [];
+        if (!lat.length || !lon.length || !z.length) return;
+
+        const width = lon.length;
+        const height = lat.length;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.createImageData(width, height);
+
+        const vMin = ecmwfState.vMin;
+        const vMax = ecmwfState.vMax;
+        const range = (vMax !== null && vMin !== null) ? (vMax - vMin || 1) : 1;
+        const cmap = ecmwfState.cmapName || getEcmwfCmapName(ecmwfState.currentVar || '');
+        const latAscending = lat.length > 1 ? (lat[0] < lat[lat.length - 1]) : true;
+
+        let p = 0;
+        for (let y = 0; y < height; y++) {
+            const latIdx = latAscending ? (height - 1 - y) : y; // ensure north is at top
+            const row = Array.isArray(z[latIdx]) ? z[latIdx] : [];
+            for (let x = 0; x < width; x++) {
+                const vRaw = row[x];
+                const v = (typeof vRaw === 'number') ? vRaw : NaN;
+                if (!Number.isFinite(v) || vMin === null || vMax === null) {
+                    imgData.data[p++] = 0;
+                    imgData.data[p++] = 0;
+                    imgData.data[p++] = 0;
+                    imgData.data[p++] = 0; // transparent where no data
+                } else {
+                    let pct = (v - vMin) / range;
+                    pct = clamp01(pct);
+                    const rgb = sampleEcmwfColormap(pct, cmap);
+                    const m = rgb.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i);
+                    const r = m ? parseInt(m[1], 10) : 0;
+                    const g = m ? parseInt(m[2], 10) : 0;
+                    const b = m ? parseInt(m[3], 10) : 0;
+                    imgData.data[p++] = r;
+                    imgData.data[p++] = g;
+                    imgData.data[p++] = b;
+                    imgData.data[p++] = 200; // alpha
+                }
+            }
+        }
+
+        ctx.putImageData(imgData, 0, 0);
+        const url = canvas.toDataURL('image/png');
+
+        const minLat = Math.min.apply(null, lat);
+        const maxLat = Math.max.apply(null, lat);
+        const minLon = Math.min.apply(null, lon);
+        const maxLon = Math.max.apply(null, lon);
+        const bounds = L.latLngBounds([
+            [minLat, minLon],
+            [maxLat, maxLon]
+        ]);
+
+        if (ecmwfState.heatLayer && leafletMap.hasLayer(ecmwfState.heatLayer)) {
+            leafletMap.removeLayer(ecmwfState.heatLayer);
+        }
+        ecmwfState.heatLayer = L.imageOverlay(url, bounds, { opacity: 1 }).addTo(leafletMap);
+    } catch (err) {
+        console.error(err);
+        if (statusText) statusText.innerText = `ECMWF error: ${err.message}`;
+    }
+}
+
+async function updateEcmwfConfigFromUi() {
+    const varSelect = document.getElementById('ecmwfVarSelect');
+    const startSel = document.getElementById('ecmwfStartSelect');
+    const endSel = document.getElementById('ecmwfEndSelect');
+    const statusText = document.getElementById('status-text');
+    if (!varSelect || !startSel || !endSel) return;
+
+    let varName = varSelect.value;
+    let startGroup = parseInt(startSel.value, 10);
+    let endGroup = parseInt(endSel.value, 10);
+    const maxGroup = (Array.isArray(ecmwfState.dateLabels) ? ecmwfState.dateLabels.length : 0) - 1;
+    if (!Number.isFinite(startGroup)) startGroup = 0;
+    if (!Number.isFinite(endGroup)) endGroup = maxGroup;
+    if (endGroup < startGroup) {
+        const tmp = startGroup;
+        startGroup = endGroup;
+        endGroup = tmp;
+    }
+
+    const startIdx = Array.isArray(ecmwfState.dateStartIndices) && ecmwfState.dateStartIndices.length
+        ? ecmwfState.dateStartIndices[Math.max(0, Math.min(startGroup, maxGroup))]
+        : 0;
+    const endIdx = Array.isArray(ecmwfState.dateEndIndices) && ecmwfState.dateEndIndices.length
+        ? ecmwfState.dateEndIndices[Math.max(0, Math.min(endGroup, maxGroup))]
+        : (ecmwfState.timeLabels.length ? ecmwfState.timeLabels.length - 1 : 0);
+
+    try {
+        setLoading(true, 'Configuring ECMWF view...');
+        const res = await fetch('/ecmwf_config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                var_name: varName,
+                frame_range: { start: startIdx, end: endIdx }
+            })
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || 'ECMWF config failed');
+
+        ecmwfState.currentVar = varName;
+        ecmwfState.cmapName = getEcmwfCmapName(varName);
+        ecmwfState.vMin = typeof data.v_min === 'number' ? data.v_min : ecmwfState.vMin;
+        ecmwfState.vMax = typeof data.v_max === 'number' ? data.v_max : ecmwfState.vMax;
+        ecmwfState.rangeStart = typeof data.range_start === 'number' ? data.range_start : startIdx;
+        ecmwfState.rangeEnd = typeof data.range_end === 'number' ? data.range_end : endIdx;
+
+        // Enforce date-range bounds on the time slider
+        const timeSlider = document.getElementById('ecmwfTimeSlider');
+        const timeLabelEl = document.getElementById('ecmwfTimeLabel');
+        if (timeSlider && timeLabelEl) {
+            const minIdx = ecmwfState.rangeStart;
+            const maxIdx = ecmwfState.rangeEnd;
+            timeSlider.min = String(minIdx);
+            timeSlider.max = String(maxIdx);
+            let current = parseInt(timeSlider.value, 10);
+            if (!Number.isFinite(current)) current = minIdx;
+            const clamped = Math.max(minIdx, Math.min(current, maxIdx));
+            timeSlider.value = String(clamped);
+            const lbl = (Array.isArray(ecmwfState.timeLabels) && clamped < ecmwfState.timeLabels.length)
+                ? ecmwfState.timeLabels[clamped]
+                : `T[${clamped}]`;
+            timeLabelEl.innerText = lbl;
+            ecmwfState.timeIndex = clamped;
+        }
+
+        const colorBar = document.getElementById('color-bar');
+        const maxValEl = document.getElementById('max-val');
+        const minValEl = document.getElementById('min-val');
+        const rightUi = document.getElementById('right-ui-stack');
+        const activeVar = document.getElementById('active-var');
+        const cmapDef = getEcmwfCmapDef(ecmwfState.cmapName || 'viridis');
+        if (colorBar) colorBar.style.background = cmapDef.gradient;
+        if (typeof ecmwfState.vMax === 'number' && maxValEl) maxValEl.innerText = ecmwfState.vMax.toFixed(1);
+        if (typeof ecmwfState.vMin === 'number' && minValEl) minValEl.innerText = ecmwfState.vMin.toFixed(1);
+        if (rightUi) rightUi.style.display = 'flex';
+        if (activeVar) activeVar.innerText = varName;
+
+        startSel.value = String(startGroup);
+        endSel.value = String(endGroup);
+        setLoading(false, 'ECMWF configuration ready. Click Render to draw.');
+    } catch (err) {
+        console.error(err);
+        setLoading(false, `ECMWF config error: ${err.message}`);
+    }
+}
+
+function initEcmwfConfigUi(meta) {
+    const varSelect = document.getElementById('ecmwfVarSelect');
+    const startSel = document.getElementById('ecmwfStartSelect');
+    const endSel = document.getElementById('ecmwfEndSelect');
+    const configCard = document.getElementById('ecmwfConfigCard');
+    if (!varSelect || !startSel || !endSel || !configCard) return;
+
+    const vars = Array.isArray(meta.variables) ? meta.variables : [];
+    ecmwfState.variables = vars;
+    varSelect.innerHTML = vars.map(v => `<option value="${v}">${v}</option>`).join('');
+
+    const defaultVar = meta.default_var || (vars[0] || null);
+    if (defaultVar) {
+        varSelect.value = defaultVar;
+        ecmwfState.currentVar = defaultVar;
+    }
+
+    const labels = Array.isArray(ecmwfState.timeLabels) ? ecmwfState.timeLabels : [];
+    const dateLabels = [];
+    const dateStartIndices = [];
+    const dateEndIndices = [];
+
+    let currentDate = null;
+    labels.forEach((full, idx) => {
+        const raw = typeof full === 'string' ? full : String(full);
+        const datePart = raw.split(' ')[0];
+        if (currentDate === null || datePart !== currentDate) {
+            currentDate = datePart;
+            dateLabels.push(datePart);
+            dateStartIndices.push(idx);
+            dateEndIndices.push(idx);
+        } else {
+            // extend last group's end index
+            dateEndIndices[dateEndIndices.length - 1] = idx;
+        }
+    });
+
+    ecmwfState.dateLabels = dateLabels;
+    ecmwfState.dateStartIndices = dateStartIndices;
+    ecmwfState.dateEndIndices = dateEndIndices;
+
+    const optionsHtml = dateLabels.map((lbl, idx) => `<option value="${idx}">${lbl}</option>`).join('');
+    startSel.innerHTML = optionsHtml;
+    endSel.innerHTML = optionsHtml;
+    startSel.value = '0';
+    endSel.value = String(Math.max(0, dateLabels.length - 1));
+
+    configCard.classList.remove('hidden');
+
+    const handler = () => { updateEcmwfConfigFromUi(); };
+    varSelect.onchange = handler;
+    startSel.onchange = handler;
+    endSel.onchange = handler;
+
+    const onKey = (e) => {
+        if (e.key === 'Enter') {
+            updateEcmwfConfigFromUi().then(() => {
+                const btn = document.getElementById('ecmwfRenderBtn');
+                if (btn) btn.click();
+            });
+        }
+    };
+    varSelect.addEventListener('keydown', onKey);
+    startSel.addEventListener('keydown', onKey);
+    endSel.addEventListener('keydown', onKey);
+}
+
+async function requestEcmwfContours(timeIndex, stepIndex) {
+    if (!leafletMap) return;
+    try {
+        const res = await fetch('/ecmwf_contours', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                var_name: ecmwfState.currentVar,
+                time_index: timeIndex,
+                step_index: stepIndex,
+                frame_range: { start: ecmwfState.rangeStart, end: ecmwfState.rangeEnd }
+            })
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || 'ECMWF contour request failed');
+
+        ecmwfState.timeIndex = timeIndex;
+        ecmwfState.stepIndex = stepIndex;
+        if (Array.isArray(data.time_label)) {
+            // Should be string, but guard anyway
+        }
+        const label = data.time_label || `T[${timeIndex}] +S[${stepIndex}]`;
+        const labelEl = document.getElementById('ecmwfTimeLabel');
+        if (labelEl) labelEl.innerText = label;
+        const activeTime = document.getElementById('active-time');
+        if (activeTime) activeTime.innerText = label;
+        const statusText = document.getElementById('status-text');
+        if (statusText) statusText.innerText = label;
+
+        // Remove any existing heat overlay when switching to point view
+        if (ecmwfState.heatLayer && leafletMap.hasLayer(ecmwfState.heatLayer)) {
+            leafletMap.removeLayer(ecmwfState.heatLayer);
+            ecmwfState.heatLayer = null;
+        }
+
+        if (ecmwfState.layer && leafletMap.hasLayer(ecmwfState.layer)) {
+            leafletMap.removeLayer(ecmwfState.layer);
+        }
+
+        const layer = L.geoJSON(data.geojson, {
+            pointToLayer: (feature, latlng) => {
+                const v = feature.properties && feature.properties.value;
+                const color = createEcmwfColor(v);
+                return L.circleMarker(latlng, {
+                    radius: 4,
+                    color,
+                    weight: 0.5,
+                    opacity: 0.9,
+                    fillColor: color,
+                    fillOpacity: 0.8
+                });
+            }
+        });
+
+        layer.addTo(leafletMap);
+        ecmwfState.layer = layer;
+
+        if (!ecmwfState.hasFitted && layer.getBounds && layer.getBounds().isValid()) {
+            leafletMap.fitBounds(layer.getBounds(), { padding: [20, 20] });
+            ecmwfState.hasFitted = true;
+        }
+    } catch (err) {
+        console.error(err);
+        const statusText = document.getElementById('status-text');
+        if (statusText) statusText.innerText = `ECMWF error: ${err.message}`;
+    }
+}
+
+function setupEcmwfMap(meta, restore) {
+    teardownMap();
+
+    const waBounds = L.latLngBounds(WA_BOUNDS);
+    const paddedBounds = waBounds.pad(WA_BOUNDS_PADDING);
+    leafletMap = L.map('target-area', {
+        maxBounds: paddedBounds,
+        maxBoundsViscosity: 0.8
+    });
+    leafletMap.fitBounds(waBounds, { padding: [30, 30] });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(leafletMap);
+
+    const timeLabels = Array.isArray(meta.time_labels) ? meta.time_labels : [];
+    ecmwfState.timeLabels = timeLabels;
+
+    const rightUi = document.getElementById('right-ui-stack');
+    if (rightUi) rightUi.style.display = 'none';
+    const activeVar = document.getElementById('active-var');
+    if (activeVar) activeVar.innerText = 'ECMWF';
+
+    const timeCard = document.getElementById('ecmwfTimeCard');
+    const timeSlider = document.getElementById('ecmwfTimeSlider');
+    const timeLabelEl = document.getElementById('ecmwfTimeLabel');
+    const stepCard = document.getElementById('ecmwfStepCard');
+    const stepSlider = document.getElementById('ecmwfStepSlider');
+    const stepLabelEl = document.getElementById('ecmwfStepLabel');
+
+    if (timeCard && timeSlider && timeLabelEl) {
+        const maxTime = Math.max(0, (Array.isArray(timeLabels) ? timeLabels.length : 0) - 1);
+        const minIdx = (typeof ecmwfState.rangeStart === 'number') ? ecmwfState.rangeStart : 0;
+        const maxIdx = (typeof ecmwfState.rangeEnd === 'number') ? ecmwfState.rangeEnd : maxTime;
+        const safeMin = Math.max(0, Math.min(minIdx, maxTime));
+        const safeMax = Math.max(safeMin, Math.min(maxIdx, maxTime));
+        timeSlider.min = String(safeMin);
+        timeSlider.max = String(safeMax);
+        const startIdx = restore ? (ecmwfState.timeIndex || safeMin) : safeMin;
+        const safeT = Math.max(safeMin, Math.min(startIdx, safeMax));
+        timeSlider.value = String(safeT);
+        const lbl = timeLabels[safeT] || `T[${safeT}]`;
+        timeLabelEl.innerText = lbl;
+        timeCard.classList.remove('hidden');
+
+        timeSlider.oninput = (e) => {
+            const idx = parseInt(e.target.value, 10);
+            if (!Number.isFinite(idx)) return;
+            const txt = timeLabels[idx] || `T[${idx}]`;
+            timeLabelEl.innerText = txt;
+        };
+        timeSlider.onchange = (e) => {
+            const tIdx = parseInt(e.target.value, 10);
+            if (!Number.isFinite(tIdx)) return;
+            const sIdx = (typeof ecmwfState.stepIndex === 'number') ? ecmwfState.stepIndex : 0;
+            if (ecmwfState.useContours) {
+                renderEcmwfContourPlot(tIdx, sIdx);
+            } else {
+                requestEcmwfContours(tIdx, sIdx);
+            }
+        };
+    }
+
+    if (stepCard && stepSlider && stepLabelEl) {
+        const maxStep = Math.max(0, (Array.isArray(ecmwfState.stepValues) ? ecmwfState.stepValues.length : 0) - 1);
+        stepSlider.min = '0';
+        stepSlider.max = String(maxStep);
+        const startS = restore ? (ecmwfState.stepIndex || 0) : 0;
+        const safeS = Math.max(0, Math.min(startS, maxStep));
+        stepSlider.value = String(safeS);
+        const stepVal = Array.isArray(ecmwfState.stepValues) && safeS < ecmwfState.stepValues.length
+            ? ecmwfState.stepValues[safeS]
+            : 0;
+        stepLabelEl.innerText = `+${stepVal} h`;
+        stepCard.classList.remove('hidden');
+
+        stepSlider.oninput = (e) => {
+            const idx = parseInt(e.target.value, 10);
+            if (!Number.isFinite(idx)) return;
+            const sVal = Array.isArray(ecmwfState.stepValues) && idx < ecmwfState.stepValues.length
+                ? ecmwfState.stepValues[idx]
+                : 0;
+            stepLabelEl.innerText = `+${sVal} h`;
+        };
+        stepSlider.onchange = (e) => {
+            const sIdx = parseInt(e.target.value, 10);
+            if (!Number.isFinite(sIdx)) return;
+            const tIdx = (typeof ecmwfState.timeIndex === 'number') ? ecmwfState.timeIndex : 0;
+            if (ecmwfState.useContours) {
+                renderEcmwfContourPlot(tIdx, sIdx);
+            } else {
+                requestEcmwfContours(tIdx, sIdx);
+            }
+        };
+    }
+
+    const emptyState = document.getElementById('empty-state');
+    if (emptyState) emptyState.style.display = 'none';
+
+    const viewModeCard = document.getElementById('ecmwfViewModeCard');
+    if (viewModeCard) viewModeCard.classList.remove('hidden');
 }
