@@ -304,13 +304,10 @@ async function runEcmwfVisualization() {
     if (!Number.isFinite(sIdx)) sIdx = 0;
     const contourToggle = document.getElementById('ecmwfContourToggle');
     const useContours = contourToggle ? !!contourToggle.checked : false;
-    ecmwfState.useContours = useContours;
-    if (useContours) {
-        if (!leafletMap && ecmwfState.timeLabels.length) {
-            setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
-        }
-        await renderEcmwfContourPlot(tIdx, sIdx);
-    } else {
+    const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
+    // Wind variables are always shown as arrows on data points (no contour heatmap)
+    if (isWindVar) {
+        ecmwfState.useContours = false;
         if (!leafletMap && ecmwfState.timeLabels.length) {
             setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
         }
@@ -318,6 +315,22 @@ async function runEcmwfVisualization() {
             leafletMap.removeLayer(ecmwfState.heatLayer);
         }
         await requestEcmwfContours(tIdx, sIdx);
+    } else {
+        ecmwfState.useContours = useContours;
+        if (useContours) {
+            if (!leafletMap && ecmwfState.timeLabels.length) {
+                setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
+            }
+            await renderEcmwfContourPlot(tIdx, sIdx);
+        } else {
+            if (!leafletMap && ecmwfState.timeLabels.length) {
+                setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
+            }
+            if (ecmwfState.heatLayer && leafletMap && leafletMap.hasLayer(ecmwfState.heatLayer)) {
+                leafletMap.removeLayer(ecmwfState.heatLayer);
+            }
+            await requestEcmwfContours(tIdx, sIdx);
+        }
     }
     setLoading(false, '');
 }
@@ -511,6 +524,18 @@ async function updateEcmwfConfigFromUi() {
         if (rightUi) rightUi.style.display = 'flex';
         if (activeVar) activeVar.innerText = varName;
 
+        // Hide contour/heatmap toggle for wind variables (always show arrows)
+        const viewModeCard = document.getElementById('ecmwfViewModeCard');
+        const contourToggle = document.getElementById('ecmwfContourToggle');
+        const isWindVar = typeof varName === 'string' && varName.startsWith('wind');
+        if (viewModeCard) {
+            viewModeCard.style.display = isWindVar ? 'none' : '';
+        }
+        if (contourToggle && isWindVar) {
+            contourToggle.checked = false;
+            ecmwfState.useContours = false;
+        }
+
         startSel.value = String(startGroup);
         endSel.value = String(endGroup);
         setLoading(false, 'ECMWF configuration ready. Click Render to draw.');
@@ -589,6 +614,20 @@ function initEcmwfConfigUi(meta) {
 async function requestEcmwfContours(timeIndex, stepIndex) {
     if (!leafletMap) return;
     try {
+        // Dynamically thin the grid so we don't render an excessive
+        // number of markers (especially for wind arrow fields).
+        let stride = 2;
+        if (typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind')) {
+            const zoom = leafletMap.getZoom ? leafletMap.getZoom() : 6;
+            if (zoom <= 5) {
+                stride = 8;
+            } else if (zoom <= 7) {
+                stride = 6;
+            } else {
+                stride = 4;
+            }
+        }
+
         const res = await fetch('/ecmwf_contours', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -596,7 +635,8 @@ async function requestEcmwfContours(timeIndex, stepIndex) {
                 var_name: ecmwfState.currentVar,
                 time_index: timeIndex,
                 step_index: stepIndex,
-                frame_range: { start: ecmwfState.rangeStart, end: ecmwfState.rangeEnd }
+                frame_range: { start: ecmwfState.rangeStart, end: ecmwfState.rangeEnd },
+                stride
             })
         });
         const data = await res.json();
@@ -629,8 +669,36 @@ async function requestEcmwfContours(timeIndex, stepIndex) {
 
         const layer = L.geoJSON(data.geojson, {
             pointToLayer: (feature, latlng) => {
-                const v = feature.properties && feature.properties.value;
-                const color = createEcmwfColor(v);
+                const props = feature.properties || {};
+                const v = props.value;
+                const color = 'rgb(0, 0, 0)';
+
+                // For wind variables, always render arrows using speed & angle from due north
+                if (typeof props.angle_degN === 'number') {
+                    const angle = props.angle_degN;
+                    const vMin = ecmwfState.vMin;
+                    const vMax = ecmwfState.vMax;
+                    const range = (typeof vMin === 'number' && typeof vMax === 'number') ? (vMax - vMin || 1) : 1;
+                    let pct = 0.5;
+                    if (typeof v === 'number' && typeof vMin === 'number') {
+                        pct = clamp01((v - vMin) / range);
+                    }
+                    const size = 0.5 + (pct * 1.5);
+                    console.log('Creating wind arrow:', v, pct, size, angle);
+                    const html = `<div class="rotator" style="--rot:${angle}deg; --size:${size}; color:${color};">
+                        <svg class="arrow-svg" viewBox="0 0 24 24">
+                            <g class="arrow-group" style="stroke:${color};">
+                                <line x1="2" y1="12" x2="21" y2="12" class="arrow-path arrow-fill" />
+                                <polyline points="15 6 21 12 15 18" class="arrow-path arrow-fill" />
+                            </g>
+                        </svg>
+                    </div>`;
+                    const icon = L.divIcon({ className: 'marker-icon', html, iconSize: [32, 32], iconAnchor: [16, 16] });
+
+                    return L.marker(latlng, { icon });
+                }
+
+                // Scalar variables: default to simple coloured circle markers
                 return L.circleMarker(latlng, {
                     radius: 4,
                     color,

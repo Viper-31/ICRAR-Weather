@@ -107,6 +107,7 @@ function setAppMode(mode) {
     appMode = mode;
     const dpirdSidebar = document.getElementById('dpirdSidebar');
     const ecmwfSidebar = document.getElementById('ecmwfSidebar');
+    const rightUi = document.getElementById('right-ui-stack');
     if (dpirdSidebar) {
         dpirdSidebar.style.display = (mode === 'dpird') ? '' : 'none';
     }

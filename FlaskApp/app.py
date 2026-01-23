@@ -32,6 +32,7 @@ ecmwf_meta = {
     "v_max": None,         # current colour-scale max for selected range
     "range_start": 0,      # start frame index for selected date range
     "range_end": 0,        # end frame index for selected date range
+    "var_map": {},         # mapping of display vars -> underlying components
 }
 
 
@@ -62,6 +63,42 @@ def _serialize_frames(frames):
                 )
         cleaned.append(serialized_frame)
     return cleaned
+
+
+def _ecmwf_group_wind_vars(raw_vars):
+    """Group ECMWF u/v wind components into synthetic wind variables.
+
+    For each matching pair (uXX, vXX), emit a single display variable
+    "windXX" and record a mapping so downstream code can derive
+    magnitude/angle from the components. Unpaired u* variables are kept
+    as-is, and all other variables pass through unchanged.
+    """
+    display_list = []
+    var_map = {}
+    processed = set()
+
+    u_vars = [v for v in raw_vars if v.startswith("u")]
+    for u_name in u_vars:
+        suffix = u_name[1:]
+        v_name = f"v{suffix}"
+        if v_name in raw_vars:
+            display = f"wind{suffix}"
+            display_list.append(display)
+            var_map[display] = {"kind": "wind", "u": u_name, "v": v_name}
+            processed.add(u_name)
+            processed.add(v_name)
+        else:
+            display_list.append(u_name)
+            var_map[u_name] = {"kind": "scalar", "var": u_name}
+            processed.add(u_name)
+
+    for name in raw_vars:
+        if name in processed:
+            continue
+        display_list.append(name)
+        var_map[name] = {"kind": "scalar", "var": name}
+
+    return display_list, var_map
 
 
 def _init_ecmwf_metadata(dataset: xr.Dataset):
@@ -109,14 +146,17 @@ def _init_ecmwf_metadata(dataset: xr.Dataset):
         # Fallback to all data variables if nothing matches criteria
         candidate_vars = list(dataset.data_vars)
 
+    # Group u/v wind components into synthetic windXX display variables
+    display_vars, var_map = _ecmwf_group_wind_vars(candidate_vars)
+
     # Prefer a sensible default variable if present (e.g. 2m temperature "t2m")
     default_var = None
     for preferred in ("t2m", "airTemperature", "t", "temperature"):
-        if preferred in candidate_vars:
+        if preferred in display_vars:
             default_var = preferred
             break
-    if default_var is None:
-        default_var = candidate_vars[0]
+    if default_var is None and display_vars:
+        default_var = display_vars[0]
 
     # Determine counts and labels
     frame_count = 1
@@ -149,7 +189,7 @@ def _init_ecmwf_metadata(dataset: xr.Dataset):
         "lat_name": lat_name,
         "lon_name": lon_name,
         "time_dim": time_dim,
-        "variables": candidate_vars,
+        "variables": display_vars,
         "var_name": default_var,
         "frame_count": frame_count,
         "time_labels": time_labels,
@@ -160,6 +200,7 @@ def _init_ecmwf_metadata(dataset: xr.Dataset):
         "v_max": None,
         "range_start": 0,
         "range_end": max(0, frame_count - 1),
+        "var_map": var_map,
     }
 
 
@@ -180,25 +221,35 @@ def _ecmwf_load_field(time_index: int = 0, step_index: int = 0):
     if var_name is None:
         raise ValueError("No ECMWF variable selected")
 
-    data = ecmwf_ds[var_name]
+    var_map = meta.get("var_map") or {}
+    mapping = var_map.get(var_name)
 
-    # Reduce extra dimensions to a single slice so we end up with
-    # a 2D field over latitude/longitude.
-    if "time" in data.dims:
-        max_time = data.sizes.get("time", 1) - 1
-        safe_t = max(0, min(int(time_index), max_time))
-        data = data.isel(time=safe_t)
-    if "step" in data.dims:
-        max_step = data.sizes.get("step", 1) - 1
-        safe_s = max(0, min(int(step_index), max_step))
-        data = data.isel(step=safe_s)
+    def _slice_to_2d(da: xr.DataArray) -> xr.DataArray:
+        """Reduce a DataArray to a single 2D (lat, lon) slice for the given indices."""
+        data = da
+        if "time" in data.dims:
+            max_time = data.sizes.get("time", 1) - 1
+            safe_t = max(0, min(int(time_index), max_time))
+            data = data.isel(time=safe_t)
+        if "step" in data.dims:
+            max_step = data.sizes.get("step", 1) - 1
+            safe_s = max(0, min(int(step_index), max_step))
+            data = data.isel(step=safe_s)
+        if (lat_name, lon_name) not in (data.dims, data.dims[::-1]):
+            raise ValueError(f"Expected ECMWF variable to have latitude/longitude dims, got {data.dims}")
+        if data.dims != (lat_name, lon_name):
+            data = data.transpose(lat_name, lon_name)
+        return data
 
-    # Ensure the data is 2D over (lat, lon) in that order
-    if (lat_name, lon_name) not in (data.dims, data.dims[::-1]):
-        raise ValueError(f"Expected ECMWF variable to have latitude/longitude dims, got {data.dims}")
-
-    if data.dims != (lat_name, lon_name):
-        data = data.transpose(lat_name, lon_name)
+    if mapping and mapping.get("kind") == "wind":
+        u_name = mapping["u"]
+        v_name = mapping["v"]
+        u_da = _slice_to_2d(ecmwf_ds[u_name])
+        v_da = _slice_to_2d(ecmwf_ds[v_name])
+        # Magnitude of wind vector from components
+        data = (u_da ** 2 + v_da ** 2) ** 0.5
+    else:
+        data = _slice_to_2d(ecmwf_ds[var_name])
 
     lat_vals = ecmwf_ds[lat_name].values
     lon_vals = ecmwf_ds[lon_name].values
@@ -213,9 +264,55 @@ def _ecmwf_points_geojson(time_index: int = 0, step_index: int = 0, stride: int 
     grid cell, filtered roughly to the Western Australia region to
     reduce payload size.
     """
-    lat_vals, lon_vals, data = _ecmwf_load_field(time_index=time_index, step_index=step_index)
+    if ecmwf_ds is None:
+        raise ValueError("No ECMWF dataset loaded")
 
-    Z = data.values
+    meta = ecmwf_meta
+    lat_name = meta["lat_name"]
+    lon_name = meta["lon_name"]
+    var_name = meta.get("var_name")
+    var_map = meta.get("var_map") or {}
+    mapping = var_map.get(var_name)
+
+    lat_vals = ecmwf_ds[lat_name].values
+    lon_vals = ecmwf_ds[lon_name].values
+
+    def _slice_to_2d(da: xr.DataArray) -> xr.DataArray:
+        data = da
+        if "time" in data.dims:
+            max_time = data.sizes.get("time", 1) - 1
+            safe_t = max(0, min(int(time_index), max_time))
+            data = data.isel(time=safe_t)
+        if "step" in data.dims:
+            max_step = data.sizes.get("step", 1) - 1
+            safe_s = max(0, min(int(step_index), max_step))
+            data = data.isel(step=safe_s)
+        if (lat_name, lon_name) not in (data.dims, data.dims[::-1]):
+            raise ValueError(f"Expected ECMWF variable to have latitude/longitude dims, got {data.dims}")
+        if data.dims != (lat_name, lon_name):
+            data = data.transpose(lat_name, lon_name)
+        return data
+
+    angle_grid = None
+    if mapping and mapping.get("kind") == "wind":
+        u_name = mapping["u"]
+        v_name = mapping["v"]
+        u_da = _slice_to_2d(ecmwf_ds[u_name])
+        v_da = _slice_to_2d(ecmwf_ds[v_name])
+        U = u_da.values
+        V = v_da.values
+        if U.ndim != 2 or V.ndim != 2:
+            raise ValueError("Expected ECMWF wind components to be 2D after slicing")
+        if U.shape != V.shape:
+            raise ValueError("ECMWF wind components have mismatched shapes")
+        Z = np.sqrt(U ** 2 + V ** 2)
+        # Angle from due north, clockwise, in degrees
+        angle_grid = (np.degrees(np.arctan2(U, V)) + 360.0) % 360.0
+    else:
+        # Scalar case: delegate to the generic loader
+        _, _, data = _ecmwf_load_field(time_index=time_index, step_index=step_index)
+        Z = data.values
+
     if Z.ndim != 2:
         raise ValueError("Expected ECMWF field to be 2D after slicing")
 
@@ -234,6 +331,9 @@ def _ecmwf_points_geojson(time_index: int = 0, step_index: int = 0, stride: int 
     sub_lat = lat_vals[lat_mask]
     sub_lon = lon_vals[lon_mask]
     sub_Z = Z[np.ix_(lat_mask, lon_mask)]
+    sub_A = None
+    if angle_grid is not None:
+        sub_A = angle_grid[np.ix_(lat_mask, lon_mask)]
 
     try:
         s = int(stride)
@@ -247,17 +347,26 @@ def _ecmwf_points_geojson(time_index: int = 0, step_index: int = 0, stride: int 
     sub_lat = sub_lat[::s]
     sub_lon = sub_lon[::s]
     sub_Z = sub_Z[::s, ::s]
+    if sub_A is not None:
+        sub_A = sub_A[::s, ::s]
 
     lon_grid, lat_grid = np.meshgrid(sub_lon, sub_lat)
 
     flat_lat = lat_grid.ravel()
     flat_lon = lon_grid.ravel()
     flat_val = sub_Z.ravel()
+    flat_ang = sub_A.ravel() if sub_A is not None else None
 
     features = []
-    for lat, lon, v in zip(flat_lat, flat_lon, flat_val):
+    for idx, (lat, lon, v) in enumerate(zip(flat_lat, flat_lon, flat_val)):
         if not np.isfinite(v):
             continue
+        props = {"value": float(v)}
+        if flat_ang is not None:
+            ang = flat_ang[idx]
+            if np.isfinite(ang):
+                props["angle_degN"] = float(ang)
+                props["speed"] = float(v)
         features.append(
             {
                 "type": "Feature",
@@ -265,9 +374,7 @@ def _ecmwf_points_geojson(time_index: int = 0, step_index: int = 0, stride: int 
                     "type": "Point",
                     "coordinates": [float(lon), float(lat)],
                 },
-                "properties": {
-                    "value": float(v),
-                },
+                "properties": props,
             }
         )
 
@@ -684,34 +791,57 @@ def ecmwf_config():
         var_name = payload.get('var_name')
         if not var_name:
             raise ValueError("ECMWF variable selection missing")
-        if var_name not in ecmwf_ds.data_vars:
-            raise ValueError(f"ECMWF variable '{var_name}' not found in dataset")
+
+        var_map = ecmwf_meta.get("var_map") or {}
+        mapping = var_map.get(var_name)
+
+        # Determine a base DataArray to drive frame counting/range selection
+        if mapping and mapping.get("kind") == "wind":
+            base_da = ecmwf_ds[mapping["u"]]
+        else:
+            if var_name not in ecmwf_ds.data_vars:
+                raise ValueError(f"ECMWF variable '{var_name}' not found in dataset")
+            base_da = ecmwf_ds[var_name]
 
         time_dim = ecmwf_meta.get("time_dim")
-        data = ecmwf_ds[var_name]
 
         # New unified request shape: frame_range {start, end}; fall back to legacy
         frame_range = payload.get('frame_range') or {}
         start_idx = frame_range.get('start')
         end_idx = frame_range.get('end')
 
-        if time_dim and time_dim in data.dims:
-            max_frame = int(data.sizes.get(time_dim, 1)) - 1
+        if time_dim and time_dim in base_da.dims:
+            max_frame = int(base_da.sizes.get(time_dim, 1)) - 1
             if start_idx is None:
                 start_idx = int(payload.get('start_index', 0))
             if end_idx is None:
                 end_idx = int(payload.get('end_index', max_frame))
             start_idx = max(0, min(start_idx, max_frame))
             end_idx = max(start_idx, min(end_idx, max_frame))
-            sliced = data.isel({time_dim: slice(start_idx, end_idx + 1)})
+            base_slice = base_da.isel({time_dim: slice(start_idx, end_idx + 1)})
         else:
             max_frame = 0
             start_idx = 0
             end_idx = 0
-            sliced = data
+            base_slice = base_da
 
-        v_min = float(sliced.min(skipna=True).values)
-        v_max = float(sliced.max(skipna=True).values)
+        # Compute colour-scale limits. For wind variables, this is based on
+        # the magnitude derived from u/v components.
+        if mapping and mapping.get("kind") == "wind":
+            u_all = ecmwf_ds[mapping["u"]]
+            v_all = ecmwf_ds[mapping["v"]]
+            if time_dim and time_dim in u_all.dims:
+                u_slice = u_all.isel({time_dim: slice(start_idx, end_idx + 1)})
+                v_slice = v_all.isel({time_dim: slice(start_idx, end_idx + 1)})
+            else:
+                u_slice = u_all
+                v_slice = v_all
+            speed = (u_slice ** 2 + v_slice ** 2) ** 0.5
+            v_min = float(speed.min(skipna=True).values)
+            v_max = float(speed.max(skipna=True).values)
+        else:
+            v_min = float(base_slice.min(skipna=True).values)
+            v_max = float(base_slice.max(skipna=True).values)
 
         ecmwf_meta["var_name"] = var_name
         ecmwf_meta["v_min"] = v_min
@@ -810,6 +940,12 @@ def ecmwf_contours():
             raise ValueError("No ECMWF dataset loaded")
 
         config = request.json or {}
+        # Optional var_name lets the client ensure the backend selection
+        # matches the currently viewed variable (including synthetic wind).
+        var_name = config.get('var_name')
+        if var_name:
+            ecmwf_meta["var_name"] = var_name
+
         time_index = int(config.get('time_index', 0))
         step_index = int(config.get('step_index', 0))
         stride = int(config.get('stride', 2)) if 'stride' in config else 2
@@ -871,7 +1007,7 @@ def ecmwf_field():
     if not var_name:
         return jsonify({"error": "Missing ECMWF variable name"}), 400
     # Keep backend selection in sync with requested variable if provided
-    if "var_name" in payload and payload["var_name"] in ecmwf_ds.data_vars:
+    if "var_name" in payload:
         ecmwf_meta["var_name"] = payload["var_name"]
 
     time_index = int(payload.get("time_index", 0) or 0)
