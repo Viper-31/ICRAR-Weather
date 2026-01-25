@@ -81,7 +81,6 @@ def _init_ecmwf_metadata(dataset: xr.Dataset):
     """
     global ecmwf_meta
 
-    # Robust coord detection
     lat_name = None
     lon_name = None
     for cand in ("latitude", "lat"):
@@ -94,7 +93,7 @@ def _init_ecmwf_metadata(dataset: xr.Dataset):
             break
 
     if lat_name is None or lon_name is None:
-        raise ValueError(f"Could not find lat/lon coords. Found: {list(dataset.coords)}")
+        raise ValueError("Could not find latitude/longitude coordinates in ECMWF dataset.")
 
     # Determine primary time-like dimension and discover time/step coords
     time_coord = dataset.coords.get("time") if "time" in dataset.coords else None
@@ -109,21 +108,23 @@ def _init_ecmwf_metadata(dataset: xr.Dataset):
     # Candidate data variables that have both lat/lon and a time-like dimension
     candidate_vars = []
     for name, var in dataset.data_vars.items():
-        # Loose check: assume if it has the lat/lon dims, it's map-able
-        if (lat_name in var.dims) and (lon_name in var.dims):
+        has_latlon = (lat_name in var.dims) and (lon_name in var.dims)
+        # Accept variables that have either time or step (or both) as time-like dimensions
+        has_time = ("time" in var.dims) or ("step" in var.dims) or (time_dim is None)
+        if has_latlon and has_time:
             candidate_vars.append(name)
-    
-    # Fallback: if strict checks fail, just list everything so UI isn't empty
-    if not candidate_vars:
-        candidate_vars = list(dataset.data_vars.keys())
 
-    # Prefer a sensible default variable
+    if not candidate_vars:
+        # Fallback to all data variables if nothing matches criteria
+        candidate_vars = list(dataset.data_vars)
+
+    # Prefer a sensible default variable if present (e.g. 2m temperature "t2m")
     default_var = None
     for preferred in ("t2m", "airTemperature", "t", "temperature"):
         if preferred in candidate_vars:
             default_var = preferred
             break
-    if default_var is None and candidate_vars:
+    if default_var is None:
         default_var = candidate_vars[0]
 
     # Determine counts and labels
@@ -134,17 +135,12 @@ def _init_ecmwf_metadata(dataset: xr.Dataset):
     step_values: list[int] = []
 
     if time_coord is not None:
-        try:
-            time_vals = pd.to_datetime(time_coord.values)
-            time_count = len(time_vals)
-            frame_count = time_count
-            time_labels = time_vals.strftime('%Y-%m-%d %H:%M').tolist()
-        except Exception:
-            # formatting failed, use raw
-            time_labels = [str(t) for t in time_coord.values]
-            time_count = len(time_labels)
-            
+        time_vals = pd.to_datetime(time_coord.values)
+        time_count = len(time_vals)
+        frame_count = time_count
+        time_labels = time_vals.strftime('%Y-%m-%d %H:%M').tolist()
     elif time_dim is not None:
+        # Fallback to using primary time-like dim if no explicit time coord
         coord = dataset[time_dim]
         frame_count = int(coord.sizes.get(time_dim, coord.size))
         raw_vals = coord.values
@@ -340,49 +336,26 @@ def _ecmwf_wa_field(time_index: int = 0, step_index: int = 0, stride: int = 1):
 
 
 def dpird_build_map_dataset(config):
-    global ds
-    # NOTE: We do NOT use global ds_wa here anymore to avoid pre-compute cost.
-    # We apply the mask dynamically to the selected time slice.
-    
+    global ds, ds_wa
     if ds is None:
         raise ValueError("No dataset loaded")
 
+    if not isinstance(config, dict):
+        raise ValueError("Invalid configuration payload")
+
     var = config.get('variable')
+    if not var:
+        raise ValueError("Variable selection missing")
+
     start_date = config.get('start_date')
     end_date = config.get('end_date')
 
-    # 1. Select Time Range first (lazy)
-    subset = ds.sel(time=slice(start_date, end_date))
+    # Always work on the WA-restricted dataset if available
+    source = ds_wa if ds_wa is not None else ds
+    subset = source.sel(time=slice(start_date, end_date))
 
-    # 2. Apply WA Bounds Mask dynamically
-    if "lat" in subset.coords and "lon" in subset.coords:
-        wa_lat_bounds = [-35.0, -13.0]
-        wa_lon_bounds = [115.0, 129.0]
-        try:
-            subset = subset.sel(
-                lat=slice(wa_lat_bounds[0], wa_lat_bounds[1]),
-                lon=slice(wa_lon_bounds[0], wa_lon_bounds[1])
-            )
-        
-        except (KeyError, ValueError):
-            lat_vals = subset.lat.values  
-            lon_vals = subset.lon.values
-            lat_mask = (lat_vals >= wa_lat_bounds[0]) & (lat_vals <= wa_lat_bounds[1])
-            lon_mask = (lon_vals >= wa_lon_bounds[0]) & (lon_vals <= wa_lon_bounds[1])
-
-            lat_indices = np.where(lat_mask)[0]
-            lon_indices = np.where(lon_mask)[0]
-
-            if len(lat_indices) > 0 and len(lon_indices) > 0:
-                subset = subset.isel(
-                    lat=lat_indices,
-                    lon=lon_indices
-                )
-                
     if subset.time.size == 0 or subset.lat.size == 0:
-        # Fallback if mask removed everything (e.g. data is outside WA)
-        # Just use original subset so we return *something* valid rather than crashing
-        subset = ds.sel(time=slice(start_date, end_date))
+        raise ValueError("No data found for Western Australia in this range")
 
     if 'station' in subset.coords:
         subset = subset.sortby('station')
@@ -418,13 +391,7 @@ def dpird_build_map_dataset(config):
     target_var_for_scale = 'wind_3m_speed' if is_combined_wind else var
 
     if target_var_for_scale not in subset.data_vars:
-        # Soft fallback if combined wind requested but pieces missing
-        if is_combined_wind: 
-             is_combined_wind = False
-             var = list(subset.data_vars.keys())[0] # Pick first available
-             target_var_for_scale = var
-        else:
-             raise ValueError(f"Variable '{var}' not available in dataset")
+        raise ValueError(f"Variable '{var}' not available in dataset")
 
     v_min = float(subset[target_var_for_scale].min(skipna=True).values)
     v_max = float(subset[target_var_for_scale].max(skipna=True).values)
@@ -515,20 +482,35 @@ def build_ecmwf_map_dataset(ds, config):
     }
 
 """
-Initialise global DPIRD state (ds) and caching.
-Removed ds_wa pre-computation to improve load speed.
+Initialise global DPIRD state (ds, ds_wa) and caching.
+Extracts logic previously in /upload to be shared with /query.
 """
-def _init_dpird_dataset(dataset, source_id):
-
+def _init_dpird_dataset(dataset,source_id):
     global ds, ds_wa, _dpird_map_cache, _dpird_dataset_id
-    ds = dataset.chunk({'time': 'auto'}) # Ensure it's treated as Dask array if not already
-    
-    ds_wa = None 
+    ds = dataset
+
+    # Precompute a WA-restricted view
+    ds_wa = None
+    if "lat" in ds.coords and "lon" in ds.coords:
+        wa_lat_bounds = [-35.0, -13.0]
+        wa_lon_bounds = [115.0, 129.0]
+        lat_cond = (ds.lat >= wa_lat_bounds[0]) & (ds.lat <= wa_lat_bounds[1])
+        lon_cond = (ds.lon >= wa_lon_bounds[0]) & (ds.lon <= wa_lon_bounds[1])
+        mask = lat_cond & lon_cond
+        
+        try:
+            has_chunks = getattr(mask, "chunks", None) is not None
+        except Exception:
+            has_chunks = False
+        if has_chunks:
+            mask = mask.compute()
+        ds_wa = ds.where(mask, drop=True)
         
     _dpird_dataset_id = source_id
     _dpird_map_cache = {}
 
-    raw_vars = list(ds.data_vars)
+    # Generate metadata response
+    raw_vars = [v for v in ds.data_vars]
     display_vars = raw_vars.copy()
     
     if 'wind_3m_speed' in raw_vars and 'wind_3m_degN' in raw_vars:
@@ -544,10 +526,9 @@ def _init_dpird_dataset(dataset, source_id):
     
     date_range = []
     if 'time' in ds.coords and ds.time.size > 0:
-        t_min = pd.to_datetime(ds.time.values.min())
-        t_max = pd.to_datetime(ds.time.values.max())
-        date_range = [t_min.strftime('%Y-%m-%d'), t_max.strftime('%Y-%m-%d')]
-        
+        time_vals = pd.to_datetime(ds.time.values)
+        date_range = [time_vals.min().strftime('%Y-%m-%d'), time_vals.max().strftime('%Y-%m-%d')]
+
     return {
         "variables": display_vars,
         "stations": stations,

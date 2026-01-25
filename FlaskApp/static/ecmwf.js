@@ -278,14 +278,9 @@ function formatEcmwfValidTime(timeIndex, stepIndex) {
 }
 
 async function uploadEcmwfFile() {
-    if (appMode !== 'ecmwf' && appMode !== 'none') {
-        alert('Please switch to ECMWF mode before uploading an ECMWF dataset.');
-    }
+    if (appMode !== 'ecmwf') return;
     const input = document.getElementById('ecmwfFileInput');
-    if (!input || !input.files[0]) {
-        alert("Please select an ECMWF NetCDF file to upload first.");
-        return;
-    }
+    if (!input || !input.files[0]) return;
 
     const file = input.files[0];
     setLoading(true, `Loading ECMWF file...`);

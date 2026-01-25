@@ -42,10 +42,7 @@ window.populateDpirdUi = function(data) {
 async function uploadFile() {
     const fileInput = document.getElementById('fileInput');
     const uploadBtn = document.getElementById('uploadBtn');
-    if (!fileInput || !fileInput.files || !fileInput.files[0]) {
-        alert("Please select a DPIRD NetCDF file to upload first.");
-        return;
-    }
+    if (!fileInput || !fileInput.files || !fileInput.files[0]) return;
 
     setLoading(true, `Processing ${fileInput.files[0].name}...`);
 
