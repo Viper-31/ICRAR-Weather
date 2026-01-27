@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+    <meta charset="UTF-8">
+    <title>Weather Visualisation</title>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <aside id="sidebar">
+        <!-- 1. Data Loading Section -->
+        <div class="section-card">
+            <span class="label-sm">1. Acacia Data Source</span>
+            <label class="var-row">
+                <input type="checkbox" id="chkDpird" value="DPIRD"> 
+                <span>DPIRD Stations</span>
+            </label>
+            <label class="var-row">
+                <input type="checkbox" id="chkEcmwf" value="ECMWF"> 
+                <span>ECMWF Operational</span>
+            </label>
+            <div id="ecmwfDateWarning" class="hidden" style="margin-top:8px; padding:8px; background:#fef3c7; border-left:3px solid #f59e0b; font-size:11px; color:#92400e;">
+                ⚠️ <strong>Note:</strong> Limit date range for ECMWF Operational as load times will be significant.
+            </div>
+        
+        <!-- Shared Date Range for Acacia Query -->
+            <div id="acaciaDateRange" class="hidden" style="margin-top:10px;">
+                <span class="label-sm" style="font-size:12px; margin-bottom:4px;">Date Range</span>
+                <div style="display:flex; gap:5px;">
+                    <input type="date" id="acaciaStartDate" aria-label="Acacia Start Date" style="font-size:12px;">
+                    <input type="date" id="acaciaEndDate" aria-label="Acacia End Date" style="font-size:12px;">
+                </div>
+                <div id="acaciaDateError" class="field-error" style="font-size:10px; margin-top:3px; color:#dc2626;" aria-live="polite"></div>
+            </div>
+
+            <button id="btnQuery" onclick="queryAcacia()" style="margin-top:8px; width:100%; background-color: #475569;">Load Selected Datasets</button>
+        </div>
+
+        <!-- 2. Manual Upload Section (Always Visible) -->
+        <div class="section-card">
+            <span class="label-sm">2. Manual Upload</span>
+            <div style="margin-bottom: 8px;">
+                <span class="label-sm" style="font-size: 11px; margin-bottom:3px;">DPIRD NetCDF (.nc)</span>
+                <div style="display:flex; gap:5px;">
+                    <input type="file" id="fileInput" accept=".nc" style="width: 150px; font-size:9px;">
+                    <button id="uploadBtn" onclick="uploadFile()" style="padding: 2px 8px; font-size:12px;">Upload</button>
+                </div>
+            </div>
+            <div>
+                 <span class="label-sm" style="font-size:11px; margin-bottom:2px;">ECMWF NetCDF (.nc)</span>
+                 <div style="display:flex; gap:5px;">
+                    <input type="file" id="ecmwfFileInput" accept=".nc" style="width: 150px; font-size:8px;">
+                    <button id="ecmwfUploadBtn" onclick="uploadEcmwfFile()" style="padding: 2px 9px; font-size:12px;">Upload</button>
+                 </div>
+            </div>
+        </div>
+
+        <!-- 3. View Context Switcher (Dynamic) -->
+        <div id="contextSwitch" class="section-card hidden">
+            <span class="label-sm">3. Active Control Panel</span>
+            <div style="display: flex; gap: 10px; margin-top:5px;">
+                <label class="var-row" id="optDpird" style="display:none;">
+                    <input type="radio" name="viewContext" value="dpird" onchange="switchViewContext(this.value)"> 
+                    <span>DPIRD</span>
+                </label>
+                <label class="var-row" id="optEcmwf" style="display:none;">
+                    <input type="radio" name="viewContext" value="ecmwf" onchange="switchViewContext(this.value)"> 
+                    <span>ECMWF</span>
+                </label>
+            </div>
+        </div>
+
+        <h1 class="sidebar-title">Configuration</h1>
+
+        <!-- DPIRD CONTROLS -->
+        <div id="dpirdSidebar" class="hidden">
+            <div id="configSection" class="hidden">
+                <div class="section-card">
+                    <span class="label-sm">Mode & Time</span>
+                    <select id="viewMode" onchange="toggleViewUI()">
+                        <option value="map">🗺️ Map View</option>
+                        <option value="graph">📈 Graph</option>
+                    </select>
+                    <div style="display:flex; gap:5px; margin-top:5px;">
+                        <input type="date" id="startDate" aria-label="Start Date">
+                        <input type="date" id="endDate" aria-label="End Date">
+                    </div>
+                </div>
+
+                <div id="timeSliderCard" class="section-card hidden">
+                    <span class="label-sm">Timeline Control</span>
+                    <input type="range" id="timeSlider" min="0" value="0">
+                    <div id="timeLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">Step: 0</div>
+                </div>
+
+                <div id="stationSelector" class="section-card hidden">
+                    <label class="label-sm" for="stationDropdown">Station Selection</label>
+                    <select id="stationDropdown"></select>
+                </div>
+
+                <div id="windComponentSelector" class="section-card hidden">
+                    <span class="label-sm">Wind Component</span>
+                    <label class="var-row">
+                        <input type="radio" name="windComponent" value="speed" checked> Wind Speed (3m)
+                    </label>
+                    <label class="var-row">
+                        <input type="radio" name="windComponent" value="angle"> Wind Direction (degN)
+                    </label>
+                </div>
+
+                <div id="radiusSelector" class="section-card hidden">
+                    <span class="label-sm">Coverage Radius</span>
+                    <label class="var-row" style="justify-content: space-between;">
+                        <span>Show 10 km radius</span>
+                        <input type="checkbox" id="radiusToggle">
+                    </label>
+                    <label class="var-row" style="justify-content: space-between;">
+                        <span>Highlight station boundary</span>
+                        <input type="checkbox" id="borderToggle">
+                    </label>
+                    <label class="var-row" style="justify-content: space-between;">
+                        <span>Fill coverage area</span>
+                        <input type="checkbox" id="fillToggle">
+                    </label>
+                    <label class="var-row" style="justify-content: space-between;">
+                        <span>Colour fill circles</span>
+                        <input type="checkbox" id="fillPaintToggle">
+                    </label>
+                    <p style="margin: 8px 0 0; font-size: 11px; color: #648b68;">Visualise 10 km coverage circles, outline the convex hull, and optionally fill the remaining area with additional coverage points.</p>
+                </div>
+
+                <div class="section-card">
+                    <span class="label-sm">Variable Selection</span>
+                    <div id="varStack" class="var-stack"></div>
+                </div>
+                <button id="renderBtn" onclick="runVisualization()" style="background: #0ea5e9; width:100%;" disabled>Render DPIRD</button>
+            </div>
+        </div>
+
+        <!-- ECMWF CONTROLS -->
+        <div id="ecmwfSidebar" class="hidden">
+            <div id="ecmwfConfigCard" class="section-card hidden">
+                <span class="label-sm">2. ECMWF Configuration</span>
+                <label class="label-sm" style="margin-top:6px;">Variable</label>
+                <select id="ecmwfVarSelect" style="width:100%; margin-bottom:8px;"></select>
+                
+                <label class="label-sm">Date Range</label>
+                <div style="display:flex; gap:5px;">
+                    <select id="ecmwfStartSelect" style="width:50%"></select>
+                    <select id="ecmwfEndSelect" style="width:50%"></select>
+                </div>
+            </div>
+
+            <div id="ecmwfTimeCard" class="section-card hidden">
+                <span class="label-sm">Forecast Reference Time</span>
+                <input type="range" id="ecmwfTimeSlider" min="0" value="0" aria-label="ECMWF forecast time index">
+                <div id="ecmwfTimeLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">T[0]</div>
+            </div>
+
+            <div id="ecmwfStepCard" class="section-card hidden">
+                <span class="label-sm">Step (+hours)</span>
+                <input type="range" id="ecmwfStepSlider" min="0" value="0" aria-label="ECMWF forecast lead time in hours">
+                <div id="ecmwfStepLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">+0 h</div>
+            </div>
+
+            <div id="ecmwfViewModeCard" class="section-card hidden">
+                <span class="label-sm">View Options</span>
+                <label class="var-row" style="justify-content: space-between;">
+                    <span>Use Contours</span>
+                    <input type="checkbox" id="ecmwfContourToggle">
+                </label>
+            </div>
+            <button id="ecmwfRenderBtn" onclick="runEcmwfVisualization()" style="background: #0ea5e9; width:100%; margin-top: 8px;">Render ECMWF</button>
+        </div>
+    </aside>
+
+    <main id="main-content">
+        <div id="viz-container" aria-busy="false">
+            <div id="empty-state">
+                <div id="spinner" class="spinner" style="display:none;"></div>
+                <p id="status-text">Waiting for data...</p>
+            </div>
+            <div id="ecmwf-time-overlay" class="hidden">--</div>
+            <div id="target-area"></div>
+            <div id="right-ui-stack">
+                <div class="floating-card">
+                    <div id="max-val" class="val-text">--</div>
+                    <div id="color-bar"></div>
+                    <div id="min-val" class="val-text">--</div>
+                </div>
+                <div class="floating-card" style="margin-top:10px">
+                    <div id="active-var" style="font-size: 11px; font-weight: 800; color: var(--primary);">Variable</div>
+                    <div id="active-time" style="font-size: 10px; color: #64748b;">--</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='index.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='dpird.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='ecmwf.js') }}" defer></script>
+</body>
+</html>

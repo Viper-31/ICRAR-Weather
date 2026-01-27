@@ -1,0 +1,12 @@
+datasets:
+  base: "2_DPIRD_dup"
+  combined: "./Dataset/Combined"
+  final: "2_DPIRD_dup/Final_stations_combined_final/"
+  preprocessed: "/Users/arnavdangmali/MainFolder/University/Projects/ICRAR-Weather-Forcasting/DPIRD_final_stations.nc"
+  processed: "/Users/arnavdangmali/MainFolder/University/Projects/ICRAR-Weather-Forcasting/DPIRD_final_stations_interpolated.nc"
+  dpird_station_list: "Mapping/DPIRD/xarray/all_station_coordinates.csv"
+
+timezone: "Australia/Perth"
+range: [2021, 2025]
+file_extension: ".csv"
+
