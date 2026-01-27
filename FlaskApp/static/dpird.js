@@ -44,6 +44,8 @@ async function uploadFile() {
     const uploadBtn = document.getElementById('uploadBtn');
     if (!fileInput || !fileInput.files || !fileInput.files[0]) return;
 
+    fileInput.disabled = true;
+    if (uploadBtn) uploadBtn.disabled = true;
     setLoading(true, `Processing ${fileInput.files[0].name}...`);
 
     const fd = new FormData();
@@ -64,7 +66,6 @@ async function uploadFile() {
         
         setLoading(false, 'Dataset ready. Choose a variable and view.');
     } catch (err) {
-        // ... err handling ...
         console.error(err);
         setLoading(false, `Error: ${err.message}`);
     } finally {

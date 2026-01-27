@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-AU">
 <head>
     <meta charset="UTF-8">
     <title>Weather Visualisation</title>
@@ -21,6 +21,20 @@
                 <input type="checkbox" id="chkEcmwf" value="ECMWF"> 
                 <span>ECMWF Operational</span>
             </label>
+            <div id="ecmwfDateWarning" class="hidden" style="margin-top:8px; padding:8px; background:#fef3c7; border-left:3px solid #f59e0b; font-size:11px; color:#92400e;">
+                ⚠️ <strong>Note:</strong> Limit date range for ECMWF Operational as load times will be significant.
+            </div>
+        
+        <!-- Shared Date Range for Acacia Query -->
+            <div id="acaciaDateRange" class="hidden" style="margin-top:10px;">
+                <span class="label-sm" style="font-size:12px; margin-bottom:4px;">Date Range</span>
+                <div style="display:flex; gap:5px;">
+                    <input type="date" id="acaciaStartDate" aria-label="Acacia Start Date" style="font-size:12px;">
+                    <input type="date" id="acaciaEndDate" aria-label="Acacia End Date" style="font-size:12px;">
+                </div>
+                <div id="acaciaDateError" class="field-error" style="font-size:10px; margin-top:3px; color:#dc2626;" aria-live="polite"></div>
+            </div>
+
             <button id="btnQuery" onclick="queryAcacia()" style="margin-top:8px; width:100%; background-color: #475569;">Load Selected Datasets</button>
         </div>
 
@@ -28,17 +42,17 @@
         <div class="section-card">
             <span class="label-sm">2. Manual Upload</span>
             <div style="margin-bottom: 8px;">
-                <span class="label-sm" style="font-size:9px; margin-bottom:2px;">DPIRD NetCDF (.nc)</span>
+                <span class="label-sm" style="font-size: 11px; margin-bottom:3px;">DPIRD NetCDF (.nc)</span>
                 <div style="display:flex; gap:5px;">
-                    <input type="file" id="fileInput" accept=".nc" style="width: 140px; font-size:10px;">
-                    <button id="uploadBtn" onclick="uploadFile()" style="padding: 2px 8px; font-size:10px;">Upload</button>
+                    <input type="file" id="fileInput" accept=".nc" style="width: 150px; font-size:9px;">
+                    <button id="uploadBtn" onclick="uploadFile()" style="padding: 2px 8px; font-size:12px;">Upload</button>
                 </div>
             </div>
             <div>
-                 <span class="label-sm" style="font-size:9px; margin-bottom:2px;">ECMWF NetCDF (.nc)</span>
+                 <span class="label-sm" style="font-size:11px; margin-bottom:2px;">ECMWF NetCDF (.nc)</span>
                  <div style="display:flex; gap:5px;">
-                    <input type="file" id="ecmwfFileInput" accept=".nc" style="width: 140px; font-size:10px;">
-                    <button id="ecmwfUploadBtn" onclick="uploadEcmwfFile()" style="padding: 2px 8px; font-size:10px;">Upload</button>
+                    <input type="file" id="ecmwfFileInput" accept=".nc" style="width: 150px; font-size:8px;">
+                    <button id="ecmwfUploadBtn" onclick="uploadEcmwfFile()" style="padding: 2px 9px; font-size:12px;">Upload</button>
                  </div>
             </div>
         </div>
@@ -76,7 +90,7 @@
                 </div>
 
                 <div id="timeSliderCard" class="section-card hidden">
-                <span class="label-sm">Timeline Control</span>
+                    <span class="label-sm">Timeline Control</span>
                     <input type="range" id="timeSlider" min="0" value="0">
                     <div id="timeLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">Step: 0</div>
                 </div>
@@ -89,32 +103,32 @@
                 <div id="windComponentSelector" class="section-card hidden">
                     <span class="label-sm">Wind Component</span>
                     <label class="var-row">
-                    <input type="radio" name="windComponent" value="speed" checked> Wind Speed (3m)
+                        <input type="radio" name="windComponent" value="speed" checked> Wind Speed (3m)
                     </label>
                     <label class="var-row">
-                    <input type="radio" name="windComponent" value="angle"> Wind Direction (degN)
+                        <input type="radio" name="windComponent" value="angle"> Wind Direction (degN)
                     </label>
                 </div>
 
                 <div id="radiusSelector" class="section-card hidden">
-                <span class="label-sm">Coverage Radius</span>
-                <label class="var-row" style="justify-content: space-between;">
-                    <span>Show 10 km radius</span>
-                    <input type="checkbox" id="radiusToggle">
-                </label>
-                <label class="var-row" style="justify-content: space-between;">
-                    <span>Highlight station boundary</span>
-                    <input type="checkbox" id="borderToggle">
-                </label>
-                <label class="var-row" style="justify-content: space-between;">
-                    <span>Fill coverage area</span>
-                    <input type="checkbox" id="fillToggle">
-                </label>
-                <label class="var-row" style="justify-content: space-between;">
-                    <span>Colour fill circles</span>
-                    <input type="checkbox" id="fillPaintToggle">
-                </label>
-                <p style="margin: 8px 0 0; font-size: 11px; color: #648b68;">Visualise 10 km coverage circles, outline the convex hull, and optionally fill the remaining area with additional coverage points.</p>
+                    <span class="label-sm">Coverage Radius</span>
+                    <label class="var-row" style="justify-content: space-between;">
+                        <span>Show 10 km radius</span>
+                        <input type="checkbox" id="radiusToggle">
+                    </label>
+                    <label class="var-row" style="justify-content: space-between;">
+                        <span>Highlight station boundary</span>
+                        <input type="checkbox" id="borderToggle">
+                    </label>
+                    <label class="var-row" style="justify-content: space-between;">
+                        <span>Fill coverage area</span>
+                        <input type="checkbox" id="fillToggle">
+                    </label>
+                    <label class="var-row" style="justify-content: space-between;">
+                        <span>Colour fill circles</span>
+                        <input type="checkbox" id="fillPaintToggle">
+                    </label>
+                    <p style="margin: 8px 0 0; font-size: 11px; color: #648b68;">Visualise 10 km coverage circles, outline the convex hull, and optionally fill the remaining area with additional coverage points.</p>
                 </div>
 
                 <div class="section-card">
@@ -127,8 +141,6 @@
 
         <!-- ECMWF CONTROLS -->
         <div id="ecmwfSidebar" class="hidden">
-            <!-- Upload section removed from here -->
-
             <div id="ecmwfConfigCard" class="section-card hidden">
                 <span class="label-sm">2. ECMWF Configuration</span>
                 <label class="label-sm" style="margin-top:6px;">Variable</label>

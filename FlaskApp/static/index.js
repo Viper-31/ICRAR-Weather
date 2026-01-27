@@ -103,48 +103,161 @@ function validateDpirdConfig() {
     renderBtn.disabled = !ok;
 }
 
-// --- NEW: Query Functionality ---
+// --- Acacia Date Range Validation ---
+function validateAcaciaDateRange() {
+    const chkEcmwf = document.getElementById('chkEcmwf');
+    const dateRangeDiv = document.getElementById('acaciaDateRange');
+    const startInput = document.getElementById('acaciaStartDate');
+    const endInput = document.getElementById('acaciaEndDate');
+    const errorDiv = document.getElementById('acaciaDateError');
+    const btnQuery = document.getElementById('btnQuery');
+    
+    // Only validate if ECMWF is checked
+    const ecmwfSelected = chkEcmwf && chkEcmwf.checked;
+    
+    if (!ecmwfSelected) {
+        if (errorDiv) errorDiv.textContent = '';
+        return true;
+    }
+    const startVal = startInput ? startInput.value : '';
+    const endVal = endInput ? endInput.value : '';
+    
+    if (!startVal || !endVal) {
+        if (errorDiv) errorDiv.textContent = 'Both dates required for ECMWF';
+        if (btnQuery) btnQuery.disabled = true;
+        return false;
+    }
+    
+    if (startVal > endVal) {
+        if (errorDiv) errorDiv.textContent = 'End date must be after start date';
+        if (btnQuery) btnQuery.disabled = true;
+        return false;
+    }
+    
+    // Check date range span (warn if > 28 days)
+    const start = new Date(startVal);
+    const end = new Date(endVal);
+    const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+    
+    if (daysDiff > 28) {
+        if (errorDiv) {
+            errorDiv.textContent = `⚠️ ${daysDiff} days selected. Load time may be >5 minutes.`;
+            errorDiv.style.color = '#f59e0b'; // Warning color
+        }
+    } else {
+        if (errorDiv) errorDiv.textContent = '';
+    }
+    
+    if (btnQuery) btnQuery.disabled = false;
+    return true;
+}
+
+function updateAcaciaDateUI() {
+    const chkDpird = document.getElementById('chkDpird');
+    const chkEcmwf = document.getElementById('chkEcmwf');
+    const dateRangeDiv = document.getElementById('acaciaDateRange');
+    const warningDiv = document.getElementById('ecmwfDateWarning');
+    const btnQuery = document.getElementById('btnQuery');
+    
+    const ecmwfChecked = chkEcmwf && chkEcmwf.checked;
+    const dpirdChecked = chkDpird && chkDpird.checked;
+    
+    // Warn if ECMWF is selected
+    if (warningDiv) {
+        warningDiv.classList.toggle('hidden', !ecmwfChecked);
+    }
+    
+    //Warn if ECMWF is selected
+    if (dateRangeDiv) {
+        dateRangeDiv.classList.toggle('hidden', !ecmwfChecked);
+    }
+    
+    // Enable/disable query button
+    if (btnQuery) {
+        if (!dpirdChecked && !ecmwfChecked) {
+            btnQuery.disabled = true;
+        } else if (ecmwfChecked) {
+            validateAcaciaDateRange();
+        } else {
+            btnQuery.disabled = false;
+        }
+    }
+}
+
+// --- Query Functionality ---
 async function queryAcacia() {
     const chkDpird = document.getElementById('chkDpird');
     const chkEcmwf = document.getElementById('chkEcmwf');
+    const startInput = document.getElementById('acaciaStartDate');
+    const endInput = document.getElementById('acaciaEndDate');
     
     // Build selection list
     const selection = [];
     if (chkDpird && chkDpird.checked) selection.push('DPIRD');
     if (chkEcmwf && chkEcmwf.checked) selection.push('ECMWF');
 
-    setLoading(true, `Querying Acacia... (${selection.join(', ') || 'None'})`);
+    if (selection.length === 0) {
+        setLoading(false, 'Please select at least one data source.');
+        return;
+    }
+
+    // Validate dates if ECMWF is selected
+    if (chkEcmwf && chkEcmwf.checked) {
+        if (!validateAcaciaDateRange()) {
+            return;
+        }
+    }
+
+    // Build request payload
+    const payload = { datasets: selection };
+    
+    // Add date range if ECMWF is selected
+    if (chkEcmwf && chkEcmwf.checked && startInput && endInput) {
+        payload.date_range = {
+            start: startInput.value,
+            end: endInput.value
+        };
+    }
+
+    setLoading(true, `Querying Acacia... (${selection.join(', ')})`);
 
     try {
         const res = await fetch('/query', {
             method: 'POST', 
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ datasets: selection })
+            body: JSON.stringify(payload)
         });
         const data = await res.json();
         
         if (data.error) throw new Error(data.error);
 
-        // 1. Handle DPIRD
+        // Sync DPIRD date inputs with Acacia dates if provided
         if (data.dpird_meta) {
             loadedDatasets.dpird = true;
-            // Call function defined in dpird.js
+            if (startInput && endInput && startInput.value && endInput.value) {
+                const dpirdStart = document.getElementById('startDate');
+                const dpirdEnd = document.getElementById('endDate');
+                if (dpirdStart) dpirdStart.value = startInput.value;
+                if (dpirdEnd) dpirdEnd.value = endInput.value;
+            }
             if(window.populateDpirdUi) window.populateDpirdUi(data.dpird_meta); 
         } else {
             loadedDatasets.dpird = false;
         }
 
-        // 2. Handle ECMWF
+        // Handle ECMWF
         if (data.ecmwf_meta) {
             loadedDatasets.ecmwf = true;
-            // Call function defined in ecmwf.js
+            console.log('ECMWF metadata received:', data.ecmwf_meta);
+            console.log('Time labels:', data.ecmwf_meta.time_labels);
+            
             if(window.populateEcmwfUi) window.populateEcmwfUi(data.ecmwf_meta);
         } else {
             loadedDatasets.ecmwf = false;
         }
         
         updateContextSwitcher();
-        setLoading(false, 'Data loaded. Use 2. Active Control Panel to configure.');
+        setLoading(false, 'Data loaded. Use Active Control Panel to configure.');
 
     } catch (err) {
         console.error(err);
@@ -152,13 +265,12 @@ async function queryAcacia() {
     }
 }
 
-// --- NEW: Context Switching Logic ---
+// --- Context Switching Logic ---
 function updateContextSwitcher() {
     const sw = document.getElementById('contextSwitch');
     const optDpird = document.getElementById('optDpird');
     const optEcmwf = document.getElementById('optEcmwf');
 
-    // Hide entire switcher if nothing is loaded
     if (!loadedDatasets.dpird && !loadedDatasets.ecmwf) {
         sw.classList.add('hidden');
         switchViewContext('none'); 
@@ -193,12 +305,10 @@ function updateContextSwitcher() {
 // Replaces the old setAppMode
 function switchViewContext(mode) {
     const prevMode = appMode;
-    appMode = mode; // Update global appMode
-    // UI Visibility
+    appMode = mode; 
     const dpirdSidebar = document.getElementById('dpirdSidebar');
     const ecmwfSidebar = document.getElementById('ecmwfSidebar');
     
-    // FIX: Use classList to toggle visibility to override !important in CSS
     if (mode === 'dpird') {
         if (dpirdSidebar) dpirdSidebar.classList.remove('hidden');
         if (ecmwfSidebar) ecmwfSidebar.classList.add('hidden');
@@ -206,7 +316,6 @@ function switchViewContext(mode) {
         if (dpirdSidebar) dpirdSidebar.classList.add('hidden');
         if (ecmwfSidebar) ecmwfSidebar.classList.remove('hidden');
     } else {
-        // None
         if (dpirdSidebar) dpirdSidebar.classList.add('hidden');
         if (ecmwfSidebar) ecmwfSidebar.classList.add('hidden');
     }
@@ -226,11 +335,15 @@ function switchViewContext(mode) {
             dpirdViewState.timeIdx = playback.currentIdx || 0;
         }
         teardownMap(); // Clear map for ECMWF
-        if (statusText) statusText.innerText = 'ECMWF mode selected. Configure parameters.';
-        
-        // Restore ECMWF map state if available
-        if (window.ecmwfState && window.ecmwfState.timeLabels.length && window.setupEcmwfMap) {
-            window.setupEcmwfMap({ time_labels: window.ecmwfState.timeLabels }, true);
+        if (rightUi) rightUi.style.display = 'none';
+        if (statusText) {
+            statusText.innerText = 'ECMWF mode selected. Waiting for ECMWF configuration...';
+        }
+        // If we already have an ECMWF dataset loaded, restore its view
+        if (ecmwfState.timeLabels.length) {
+            setupEcmwfMap({
+                time_labels: ecmwfState.timeLabels
+            }, true);
         }
         return;
     }
@@ -865,6 +978,25 @@ function toggleViewUI() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Just ensure correct initial state
     updateContextSwitcher();
+    const chkDpird = document.getElementById('chkDpird');
+    const chkEcmwf = document.getElementById('chkEcmwf');
+    const acaciaStart = document.getElementById('acaciaStartDate');
+    const acaciaEnd = document.getElementById('acaciaEndDate');
+
+    if (chkDpird) chkDpird.addEventListener('change', updateAcaciaDateUI);
+    if (chkEcmwf) chkEcmwf.addEventListener('change', updateAcaciaDateUI);
+    if (acaciaStart) acaciaStart.addEventListener('change', validateAcaciaDateRange);
+    if (acaciaEnd) acaciaEnd.addEventListener('change', validateAcaciaDateRange);
+
+    if (acaciaStart && acaciaEnd) {
+        const today = new Date();
+        const threeDaysAgo = new Date(today);
+        threeDaysAgo.setDate(today.getDate() - 3);
+        
+        acaciaEnd.value = today.toISOString().split('T')[0];
+        acaciaStart.value = threeDaysAgo.toISOString().split('T')[0];
+    }
+    
+    updateAcaciaDateUI();
 });
