@@ -156,16 +156,17 @@ button:disabled { background: #cbd5e1; cursor: not-allowed; }
 #dualSidebar {
     margin-top: 10px;
     padding: 10px;
-    background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+    background: #ffffff;
     border-radius: 8px;
+    border: 1px solid var(--border);
 }
 
 #dualSidebar .label-sm {
-    color: white;
+    color: #64748b;
 }
 
 #dualSidebar p {
-    color: rgba(255, 255, 255, 0.9);
+    color: #64748b;
 }
 
 #renderBtn,
@@ -183,11 +184,11 @@ button:disabled { background: #cbd5e1; cursor: not-allowed; }
 
 #dualRenderBtn {
     display: none;
-    background: #0ea5e9; 
+    background: #8a5cf6; 
 }
 
 #dualRenderBtn:hover {
-    background: #0284c7;
+    background: #2e1272c5;
 }
 
 #dualRenderBtn:disabled {
