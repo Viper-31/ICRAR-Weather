@@ -501,7 +501,7 @@ def build_map_dataset(config):
     lons = subset.lon.values.flatten().tolist()
 
     print(f"✅ Completed spatial setup: {len(lats)} stations, {len(times)} timesteps")
-    
+
     if 'station' in subset.coords:
         station_names = [str(s) for s in subset.station.values.flatten()]
     else:
@@ -901,7 +901,7 @@ def ecmwf_upload():
         file.save(filepath)
 
         try:
-            ecmwf_ds = xr.open_dataset(filepath, chunks={})
+            ecmwf_ds = xr.open_dataset(filepath,  engine='h5netcdf', chunks={})
         except Exception:
             ecmwf_ds = xr.open_dataset(filepath)
         _init_ecmwf_metadata(ecmwf_ds)
@@ -992,8 +992,8 @@ def ecmwf_config():
             else:
                 base_slice = base_da
 
-            # Compute colour-scale limits. For wind variables, this is based on
-            # the magnitude derived from u/v components.
+            # Compute colour-scale limits. 
+            # For wind variables, this is based on magnitude derived from u/v components.
             if mapping and mapping.get("kind") == "wind":
                 u_all = ecmwf_ds[mapping["u"]]
                 v_all = ecmwf_ds[mapping["v"]]
@@ -1022,7 +1022,6 @@ def ecmwf_config():
                 
                 # Handle Dask arrays efficiently
                 if hasattr(base_slice, 'chunks'):
-                    import dask
                     with dask.config.set(scheduler='threads'):
                         computed = base_slice.compute()
                         v_min = float(computed.min())

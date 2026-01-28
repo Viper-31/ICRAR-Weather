@@ -786,7 +786,18 @@ async function runDualVisualization() {
         if (typeof updateEcmwfConfigFromUi === 'function') {
             await updateEcmwfConfigFromUi();
         }
-        
+        // Wind variable special handling
+        const contourToggle = document.getElementById('ecmwfContourToggle');
+        const viewModeCard = document.getElementById('ecmwfViewModeCard');
+        const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
+
+         if (viewModeCard) {
+            viewModeCard.style.display = isWindVar ? 'none' : '';
+        }
+        if (contourToggle && isWindVar) {
+            contourToggle.checked = false;
+        }
+
         const timeSlider = document.getElementById('ecmwfTimeSlider');
         const stepSlider = document.getElementById('ecmwfStepSlider');
         let tIdx = timeSlider ? parseInt(timeSlider.value, 10) : 0;
@@ -801,9 +812,35 @@ async function runDualVisualization() {
             }
         }
         
-        // Render ECMWF layer with opacity
-        if (typeof renderEcmwfContourPlot === 'function') {
-            await renderEcmwfContourPlot(tIdx, sIdx, ecmwfOpacity);
+        // Render ECMWF layer (wind → arrows, scalar → check toggle)
+        const useContours = contourToggle ? !!contourToggle.checked : false;
+        
+        if (isWindVar) {
+            ecmwfState.useContours = false;
+            
+            if (ecmwfState.heatLayer && leafletMap && leafletMap.hasLayer(ecmwfState.heatLayer)) {
+                leafletMap.removeLayer(ecmwfState.heatLayer);
+            }
+            
+            if (typeof requestEcmwfContours === 'function') {
+                await requestEcmwfContours(tIdx, sIdx);
+            }
+        } else {
+            ecmwfState.useContours = useContours;
+            
+            if (useContours) {
+                if (typeof renderEcmwfContourPlot === 'function') {
+                    await renderEcmwfContourPlot(tIdx, sIdx, ecmwfOpacity);
+                }
+            } else {
+                if (ecmwfState.heatLayer && leafletMap && leafletMap.hasLayer(ecmwfState.heatLayer)) {
+                    leafletMap.removeLayer(ecmwfState.heatLayer);
+                }
+                
+                if (typeof requestEcmwfContours === 'function') {
+                    await requestEcmwfContours(tIdx, sIdx);
+                }
+            }
         }
         
         // Render DPIRD on top
