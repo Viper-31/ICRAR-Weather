@@ -1,10 +1,10 @@
 // DPIRD entry points split out from index.js.
 // These rely on shared globals and helpers defined in index.js:
 // appMode, dpirdViewState, leafletMap, markers, playback, WA_BOUNDS, WA_BOUNDS_PADDING,
-// colorMaps, latestMapCoords, lastMapRequestBody, fillPaintState and helpers like
+// colorMaps, latestMapCoords, lastMapRequestBody,  and helpers like
 // setLoading, setDateError, validateDpirdConfig, handleConfigChange, attachConfigChangeHandlers,
-// updateVariableDependentUI, toggleViewUI, teardownMap, computeScalarColor, applyFillColors,
-// clearRadiusOverlays, clearHullOverlay, clearFillOverlays, initializePlayback, pausePlayback,
+// updateVariableDependentUI, toggleViewUI, teardownMap, computeScalarColor
+// initializePlayback, pausePlayback,
 // clearPlaybackAttention.
 
 // Upload DPIRD NetCDF file and initialise config UI
@@ -64,7 +64,11 @@ async function uploadFile() {
         // Update Switcher
         updateContextSwitcher();
         
-        setLoading(false, 'Dataset ready. Choose a variable and view.');
+        if (loadedDatasets.ecmwf) {
+            setLoading(false, 'Both datasets loaded. Select "Both (Overlay)" to use dual mode.');
+        } else {
+            setLoading(false, 'Dataset ready. Choose a variable and view.');
+        }
     } catch (err) {
         console.error(err);
         setLoading(false, `Error: ${err.message}`);
@@ -75,9 +79,20 @@ async function uploadFile() {
 
 // Render DPIRD map view
 async function renderMap(varName) {
-    if (appMode !== 'dpird') return; // Map rendering currently only for DPIRD mode
+    if (appMode !== 'dpird' && appMode !== 'dual') return; // Map rendering for DPIRD mode 
     try {
-        teardownMap();
+        if (appMode === 'dpird') {
+            teardownMap();
+        } else {
+            // In dual mode, clear DPIRD markers but keep map instance
+            markers.forEach(m => {
+                if (leafletMap && leafletMap.hasLayer(m)) {
+                    leafletMap.removeLayer(m);
+                }
+            });
+            markers = [];
+        }
+        
         const start_date = document.getElementById('startDate').value;
         const end_date = document.getElementById('endDate').value;
         const mode = 'map';
@@ -90,12 +105,7 @@ async function renderMap(varName) {
             extra_options: {}
         };
         lastMapRequestBody = payload;
-        fillPaintState.enabled = false;
-        fillPaintState.values = [];
-        fillPaintState.vMin = null;
-        fillPaintState.vMax = null;
-        const fillPaintToggle = document.getElementById('fillPaintToggle');
-        if (fillPaintToggle) fillPaintToggle.checked = false;
+        
         setLoading(true, 'Rendering map view...');
         const res = await fetch('/map_data', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -104,16 +114,16 @@ async function renderMap(varName) {
         const d = await res.json();
         if (!res.ok || d.error) throw new Error(d.error || 'Map request failed');
 
-        if (leafletMap) leafletMap.remove();
-
-        const waBounds = L.latLngBounds(WA_BOUNDS);
-        const paddedBounds = waBounds.pad(WA_BOUNDS_PADDING);
-        leafletMap = L.map('target-area', {
-            maxBounds: paddedBounds,
-            maxBoundsViscosity: 0.8
-        });
-        leafletMap.fitBounds(waBounds, { padding: [30, 30] });
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(leafletMap);
+        if (!leafletMap) {
+            const waBounds = L.latLngBounds(WA_BOUNDS);
+            const paddedBounds = waBounds.pad(WA_BOUNDS_PADDING);
+            leafletMap = L.map('target-area', {
+                maxBounds: paddedBounds,
+                maxBoundsViscosity: 0.8
+            });
+            leafletMap.fitBounds(waBounds, { padding: [30, 30] });
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(leafletMap);
+        }
 
         const theme = colorMaps[varName] || colorMaps['default'];
         const isCombinedWind = (varName === 'wind_3m');
@@ -177,7 +187,6 @@ async function renderMap(varName) {
             });
             document.getElementById('active-time').innerText = d.time_labels[timeIdx];
             document.getElementById('timeLabel').innerText = d.time_labels[timeIdx];
-            applyFillColors(timeIdx);
             dpirdViewState.timeIdx = timeIdx;
         };
 
@@ -219,41 +228,11 @@ async function renderMap(varName) {
                 };
             });
 
-        const rawHull = d.hull && typeof d.hull === 'object' ? d.hull : {};
-        const fillPoints = Array.isArray(d.fill_circles)
-            ? d.fill_circles
-                .map((circle) => {
-                    const latCandidate = circle && typeof circle.lat === 'number' ? circle.lat : null;
-                    const lonCandidate = circle && typeof circle.lon === 'number' ? circle.lon : null;
-                    return { lat: latCandidate, lon: lonCandidate };
-                })
-                .filter(point => typeof point.lat === 'number' && typeof point.lon === 'number')
-            : [];
         latestMapCoords = {
             points: stationPoints,
-            hull: {
-                boundary: Array.isArray(rawHull.boundary) ? rawHull.boundary : [],
-                interior: Array.isArray(rawHull.interior) ? rawHull.interior : [],
-                polygon: Array.isArray(rawHull.polygon) ? rawHull.polygon : [],
-                hullType: typeof rawHull.hullType === 'string' ? rawHull.hullType : 'none'
-            },
-            fillPoints
+            fillPoints:[]
         };
         updateVariableDependentUI();
-        const radiusToggle = document.getElementById('radiusToggle');
-        const borderToggle = document.getElementById('borderToggle');
-        const fillToggle = document.getElementById('fillToggle');
-        if (varName === 'airTemperature') {
-            if (radiusToggle && radiusToggle.checked) {
-                updateRadiusOverlays(true);
-            }
-            if (borderToggle && borderToggle.checked) {
-                updateHullOverlay(true);
-            }
-            if (fillToggle && fillToggle.checked) {
-                updateFillOverlays(true);
-            }
-        }
 
         const slider = document.getElementById('timeSlider');
         slider.max = d.time_labels.length - 1;
@@ -283,17 +262,14 @@ async function renderMap(varName) {
     } catch (err) {
         console.error(err);
         setLoading(false, err.message || 'Error rendering map');
-        clearRadiusOverlays();
-        clearHullOverlay();
-        clearFillOverlays();
         latestMapCoords = createDefaultMapState();
         disposePlayback(true);
     }
 }
 
-// Render DPIRD time-series/aggregate graph
+// Render DPIRD time-series/aggregate graph in dual or DPIRD mode
 async function renderGraph(datasetVar, displayLabel) {
-    if (appMode !== 'dpird') return; // Graph rendering currently only for DPIRD mode
+    if (appMode !== 'dpird' && appMode !== 'dual') return;
     try {
         teardownMap();
         const start_date = document.getElementById('startDate').value;
@@ -336,8 +312,8 @@ async function renderGraph(datasetVar, displayLabel) {
 
 // Main DPIRD visualisation entry point
 async function runVisualization() {
-    if (appMode !== 'dpird') {
-        alert('Rendering is only available in DPIRD mode right now.');
+    if (appMode !== 'dpird' && appMode !== 'dual') {
+        alert('Rendering DPIRD visualization is only available in DPIRD or Dual mode.');
         return;
     }
     const mode = document.getElementById('viewMode').value;

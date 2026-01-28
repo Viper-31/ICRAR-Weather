@@ -14,60 +14,59 @@
         <div class="section-card">
             <span class="label-sm">1. Acacia Data Source</span>
             <label class="var-row">
-                <input type="checkbox" id="chkDpird" value="DPIRD"> 
-                <span>DPIRD Stations</span>
+                <input type="checkbox" id="chkDpird"> DPIRD Stations
             </label>
             <label class="var-row">
-                <input type="checkbox" id="chkEcmwf" value="ECMWF"> 
-                <span>ECMWF Operational</span>
+                <input type="checkbox" id="chkEcmwf"> ECMWF Operational
             </label>
-            <div id="ecmwfDateWarning" class="hidden" style="margin-top:8px; padding:8px; background:#fef3c7; border-left:3px solid #f59e0b; font-size:11px; color:#92400e;">
-                ⚠️ <strong>Note:</strong> Limit date range for ECMWF Operational as load times will be significant.
-            </div>
-        
+            
         <!-- Shared Date Range for Acacia Query -->
             <div id="acaciaDateRange" class="hidden" style="margin-top:10px;">
-                <span class="label-sm" style="font-size:12px; margin-bottom:4px;">Date Range</span>
+                <span class="label-sm" style="font-size:12px; margin-bottom:4px;">ECMWF Date Range</span>
                 <div style="display:flex; gap:5px;">
                     <input type="date" id="acaciaStartDate" aria-label="Acacia Start Date" style="font-size:12px;">
                     <input type="date" id="acaciaEndDate" aria-label="Acacia End Date" style="font-size:12px;">
                 </div>
-                <div id="acaciaDateError" class="field-error" style="font-size:10px; margin-top:3px; color:#dc2626;" aria-live="polite"></div>
+                <div id="acaciaDateError" class="field-error" style="font-size:10px; margin-top:3px;" aria-live="polite"></div>
+            </div>
+            <div id="ecmwfDateWarning" class="hidden" style="font-size:10px; color:#f59e0b; margin-top:5px;">
+                ⚠️ ECMWF weekly files are ~1.8GB each. Loading may take time.
             </div>
 
             <button id="btnQuery" onclick="queryAcacia()" style="margin-top:8px; width:100%; background-color: #475569;">Load Selected Datasets</button>
         </div>
 
-        <!-- 2. Manual Upload Section (Always Visible) -->
+        <!-- 2. Manual Upload Section -->
         <div class="section-card">
             <span class="label-sm">2. Manual Upload</span>
             <div style="margin-bottom: 8px;">
-                <span class="label-sm" style="font-size: 11px; margin-bottom:3px;">DPIRD NetCDF (.nc)</span>
+                <span class="label-sm" style="font-size: 11px; margin-bottom:3px;">DPIRD File (.nc)</span>
                 <div style="display:flex; gap:5px;">
                     <input type="file" id="fileInput" accept=".nc" style="width: 150px; font-size:9px;">
                     <button id="uploadBtn" onclick="uploadFile()" style="padding: 2px 8px; font-size:12px;">Upload</button>
                 </div>
-            </div>
-            <div>
-                 <span class="label-sm" style="font-size:11px; margin-bottom:2px;">ECMWF NetCDF (.nc)</span>
+                </div>
+                <div>
+                 <span class="label-sm" style="font-size:11px; margin-bottom:2px;">ECMWF File (.nc)</span>
                  <div style="display:flex; gap:5px;">
                     <input type="file" id="ecmwfFileInput" accept=".nc" style="width: 150px; font-size:8px;">
                     <button id="ecmwfUploadBtn" onclick="uploadEcmwfFile()" style="padding: 2px 9px; font-size:12px;">Upload</button>
-                 </div>
+                </div>
             </div>
         </div>
 
-        <!-- 3. View Context Switcher (Dynamic) -->
+        <!-- 3. Active View (Dynamic based on loaded datasets) -->
         <div id="contextSwitch" class="section-card hidden">
-            <span class="label-sm">3. Active Control Panel</span>
-            <div style="display: flex; gap: 10px; margin-top:5px;">
-                <label class="var-row" id="optDpird" style="display:none;">
-                    <input type="radio" name="viewContext" value="dpird" onchange="switchViewContext(this.value)"> 
-                    <span>DPIRD</span>
+            <span class="label-sm">3. Active View</span>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <label id="optDpird" class="var-row" style="display:none;">
+                    <input type="radio" name="viewContext" value="dpird" onchange="switchViewContext('dpird')"> DPIRD
                 </label>
-                <label class="var-row" id="optEcmwf" style="display:none;">
-                    <input type="radio" name="viewContext" value="ecmwf" onchange="switchViewContext(this.value)"> 
-                    <span>ECMWF</span>
+                <label id="optEcmwf" class="var-row" style="display:none;">
+                    <input type="radio" name="viewContext" value="ecmwf" onchange="switchViewContext('ecmwf')"> ECMWF
+                </label>
+                <label id="optDual" class="var-row" style="display:none;">
+                    <input type="radio" name="viewContext" value="dual" onchange="switchViewContext('dual')"> Both (Overlay)
                 </label>
             </div>
         </div>
@@ -78,7 +77,8 @@
         <div id="dpirdSidebar" class="hidden">
             <div id="configSection" class="hidden">
                 <div class="section-card">
-                    <span class="label-sm">Mode & Time</span>
+                    <span class="label-sm">DPIRD Configuration</span>
+                    <label class="sr-only" for="viewMode">View mode</label>
                     <select id="viewMode" onchange="toggleViewUI()">
                         <option value="map">🗺️ Map View</option>
                         <option value="graph">📈 Graph</option>
@@ -110,29 +110,9 @@
                     </label>
                 </div>
 
-                <div id="radiusSelector" class="section-card hidden">
-                    <span class="label-sm">Coverage Radius</span>
-                    <label class="var-row" style="justify-content: space-between;">
-                        <span>Show 10 km radius</span>
-                        <input type="checkbox" id="radiusToggle">
-                    </label>
-                    <label class="var-row" style="justify-content: space-between;">
-                        <span>Highlight station boundary</span>
-                        <input type="checkbox" id="borderToggle">
-                    </label>
-                    <label class="var-row" style="justify-content: space-between;">
-                        <span>Fill coverage area</span>
-                        <input type="checkbox" id="fillToggle">
-                    </label>
-                    <label class="var-row" style="justify-content: space-between;">
-                        <span>Colour fill circles</span>
-                        <input type="checkbox" id="fillPaintToggle">
-                    </label>
-                    <p style="margin: 8px 0 0; font-size: 11px; color: #648b68;">Visualise 10 km coverage circles, outline the convex hull, and optionally fill the remaining area with additional coverage points.</p>
-                </div>
-
+                
                 <div class="section-card">
-                    <span class="label-sm">Variable Selection</span>
+                    <span class="label-sm">DPIRD Variable</span>
                     <div id="varStack" class="var-stack"></div>
                 </div>
                 <button id="renderBtn" onclick="runVisualization()" style="background: #0ea5e9; width:100%;" disabled>Render DPIRD</button>
@@ -142,15 +122,12 @@
         <!-- ECMWF CONTROLS -->
         <div id="ecmwfSidebar" class="hidden">
             <div id="ecmwfConfigCard" class="section-card hidden">
-                <span class="label-sm">2. ECMWF Configuration</span>
-                <label class="label-sm" style="margin-top:6px;">Variable</label>
-                <select id="ecmwfVarSelect" style="width:100%; margin-bottom:8px;"></select>
-                
-                <label class="label-sm">Date Range</label>
-                <div style="display:flex; gap:5px;">
-                    <select id="ecmwfStartSelect" style="width:50%"></select>
-                    <select id="ecmwfEndSelect" style="width:50%"></select>
-                </div>
+                <span class="label-sm">ECMWF Configuration</span>
+                <label class="label-sm" style="margin-top:6px;" for="ecmwfVarSelect">Variable</label>
+                <select id="ecmwfVarSelect"></select>
+                <label class="label-sm" style="margin-top:6px;">Date Range</label>
+                <select id="ecmwfStartSelect"></select>
+                <select id="ecmwfEndSelect"></select>
             </div>
 
             <div id="ecmwfTimeCard" class="section-card hidden">
@@ -168,11 +145,27 @@
             <div id="ecmwfViewModeCard" class="section-card hidden">
                 <span class="label-sm">View Options</span>
                 <label class="var-row" style="justify-content: space-between;">
-                    <span>Use Contours</span>
+                    <span>Show contours (heatmap)</span>
                     <input type="checkbox" id="ecmwfContourToggle">
                 </label>
             </div>
-            <button id="ecmwfRenderBtn" onclick="runEcmwfVisualization()" style="background: #0ea5e9; width:100%; margin-top: 8px;">Render ECMWF</button>
+            <button id="ecmwfRenderBtn" onclick="runEcmwfVisualization()" style="background: #0ea5e9; margin-top: 8px;">Render ECMWF</button>
+        </div>
+
+        <!-- Dual Mode Controls (shown when both datasets loaded and dual mode selected) -->
+        <div id="dualSidebar" class="hidden">
+            <div class="section-card">
+                <span class="label-sm">Dual Mode Controls</span>
+                <p style="font-size:11px; color:#64748b; margin:5px 0;">
+                    ECMWF renders as background (opacity 0.75).<br>
+                    DPIRD stations render in foreground.
+                </p>
+                <label class="var-row" style="justify-content: space-between; margin-top:8px;">
+                    <span>ECMWF Opacity</span>
+                    <input type="range" id="ecmwfOpacitySlider" min="0" max="100" value="75" style="width:80px;">
+                </label>
+            </div>
+            <button id="dualRenderBtn" onclick="runDualVisualization()" style="background: #8b5cf6; margin-top: 8px;">Render Both Layers</button>
         </div>
     </aside>
 
@@ -184,15 +177,33 @@
             </div>
             <div id="ecmwf-time-overlay" class="hidden">--</div>
             <div id="target-area"></div>
+            
+            <!-- Dual Colorbar Stack -->
             <div id="right-ui-stack">
-                <div class="floating-card">
-                    <div id="max-val" class="val-text">--</div>
-                    <div id="color-bar"></div>
-                    <div id="min-val" class="val-text">--</div>
+                <!-- ECMWF Colorbar (Left, for background layer) -->
+                <div id="ecmwf-colorbar-card" class="floating-card hidden">
+                    <div class="colorbar-header" style="font-size: 9px; color: #64748b; text-align: center; margin-bottom: 4px;">
+                        ECMWF
+                    </div>
+                    <div id="ecmwf-max-val" class="val-text">--</div>
+                    <div id="ecmwf-color-bar" style="width: 18px; height: 120px; border-radius: 4px;"></div>
+                    <div id="ecmwf-min-val" class="val-text">--</div>
+                    <div id="ecmwf-active-var" style="font-size: 10px; font-weight: 600; color: var(--primary); text-align: center; margin-top: 4px;">--</div>
+                    <div id="ecmwf-active-units" style="font-size: 9px; color: #94a3b8; text-align: center;">--</div>
+                    <div id="ecmwf-active-time" style="font-size: 9px; color: #64748b; text-align: center;">--</div>
                 </div>
-                <div class="floating-card" style="margin-top:10px">
-                    <div id="active-var" style="font-size: 11px; font-weight: 800; color: var(--primary);">Variable</div>
-                    <div id="active-time" style="font-size: 10px; color: #64748b;">--</div>
+                
+                <!-- DPIRD/Shared Colorbar (Right, for foreground layer or shared) -->
+                <div id="dpird-colorbar-card" class="floating-card hidden">
+                    <div id="dpird-colorbar-header" class="colorbar-header" style="font-size: 9px; color: #64748b; text-align: center; margin-bottom: 4px;">
+                        DPIRD
+                    </div>
+                    <div id="max-val" class="val-text">--</div>
+                    <div id="color-bar" style="width: 18px; height: 120px; border-radius: 4px;"></div>
+                    <div id="min-val" class="val-text">--</div>
+                    <div id="active-var" style="font-size: 10px; font-weight: 600; color: var(--primary); text-align: center; margin-top: 4px;">Variable</div>
+                    <div id="active-units" style="font-size: 9px; color: #94a3b8; text-align: center;">--</div>
+                    <div id="active-time" style="font-size: 9px; color: #64748b; text-align: center;">--</div>
                 </div>
             </div>
         </div>

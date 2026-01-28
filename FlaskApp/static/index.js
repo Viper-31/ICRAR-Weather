@@ -9,26 +9,32 @@ const dpirdViewState = {
 };
 let leafletMap = null;
 let markers = [];
-let radiusLayers = [];
-let hullLayer = null;
-let fillLayers = [];
-const EMPTY_HULL_STATE = { boundary: [], interior: [], polygon: [], hullType: 'none' };
 const createDefaultMapState = () => ({
     points: [],
-    hull: {
-        boundary: [],
-        interior: [],
-        polygon: [],
-        hullType: 'none'
-    },
     fillPoints: []
 });
 let latestMapCoords = createDefaultMapState();
 let lastMapRequestBody = null;
-const fillPaintState = { enabled: false, loading: false, values: [], vMin: null, vMax: null };
-const hullState = { boundaryStations: [], interiorStations: [] };
+
 const colorMaps = {
-    'airTemperature': { scale: 'RdBu_r', gradient: 'linear-gradient(to top, #053061, #2166ac, #d1e5f0, #fddbc7, #d6604d, #67001f)' },
+    'airTemperature': { 
+        scale: 'coolwarm', 
+        gradient: 'linear-gradient(to top, #3b4cc0, #bcb8b7, #b40426)',
+        stops: [
+            { pos: 0.0, color: [59, 76, 192] },
+            { pos: 0.5, color: [188, 184, 183] },
+            { pos: 1.0, color: [180, 4, 38] }
+        ]
+    },
+    'dewPoint': { 
+        scale: 'coolwarm', 
+        gradient: 'linear-gradient(to top, #3b4cc0, #bcb8b7, #b40426)',
+        stops: [
+            { pos: 0.0, color: [59, 76, 192] },
+            { pos: 0.5, color: [188, 184, 183] },
+            { pos: 1.0, color: [180, 4, 38] }
+        ]
+    },
     'relativeHumidity': { scale: 'Blues', gradient: 'linear-gradient(to top, #eff3ff, #6baed6, #08519c)' },
     'wind_3m_degN': { scale: 'Hsv', gradient: 'linear-gradient(to right, red, yellow, green, blue, red)' },
     'default': { scale: 'Viridis', gradient: 'linear-gradient(to top, #440154, #218f8d, #fde725)' }
@@ -54,6 +60,17 @@ const playback = {
     slider: null,
     updateMarkers: null
 };
+
+const ECMWF_DPIRD_VAR_MAP = {
+    't2m': 'airTemperature',
+    'd2m': 'dewPoint'
+};
+
+const DPIRD_ECMWF_VAR_MAP = {
+    'airTemperature': 't2m',
+    'dewPoint': 'd2m'
+};
+
 let configListenersAttached = false;
 
 function setLoading(isLoading, message) {
@@ -270,6 +287,7 @@ function updateContextSwitcher() {
     const sw = document.getElementById('contextSwitch');
     const optDpird = document.getElementById('optDpird');
     const optEcmwf = document.getElementById('optEcmwf');
+    const optDual = document.getElementById('optDual');
 
     if (!loadedDatasets.dpird && !loadedDatasets.ecmwf) {
         sw.classList.add('hidden');
@@ -282,104 +300,388 @@ function updateContextSwitcher() {
     // Show/Hide specific radio buttons
     optDpird.style.display = loadedDatasets.dpird ? 'flex' : 'none';
     optEcmwf.style.display = loadedDatasets.ecmwf ? 'flex' : 'none';
+    optDual.style.display = (loadedDatasets.dpird && loadedDatasets.ecmwf) ? 'flex' : 'none';
 
     // Auto-select logic
     const currentRad = document.querySelector('input[name="viewContext"]:checked');
     const currentVal = currentRad ? currentRad.value : null;
 
+    // Keep current selection if still valid
     if (currentVal === 'dpird' && loadedDatasets.dpird) {
-        // Keep current
+        switchViewContext('dpird');
     } else if (currentVal === 'ecmwf' && loadedDatasets.ecmwf) {
-        // Keep current
+        switchViewContext('ecmwf');
+    } else if (currentVal === 'dual' && loadedDatasets.dpird && loadedDatasets.ecmwf) {
+        switchViewContext('dual');
+    }
+    
+    // Auto-select based on what's available
+    if (loadedDatasets.dpird && loadedDatasets.ecmwf) {
+        const r = document.querySelector('input[name="viewContext"][value="dual"]');
+        if (r) { 
+            r.checked = true; 
+            switchViewContext('dual'); 
+            updateColorbarVisibility();
+        }
     } else if (loadedDatasets.dpird) {
-        // Switch to DPIRD
         const r = document.querySelector('input[name="viewContext"][value="dpird"]');
-        if(r) { r.checked = true; switchViewContext('dpird'); }
+        if (r) { r.checked = true; switchViewContext('dpird'); }
     } else if (loadedDatasets.ecmwf) {
-        // Switch to ECMWF
         const r = document.querySelector('input[name="viewContext"][value="ecmwf"]');
-        if(r) { r.checked = true; switchViewContext('ecmwf'); }
+        if (r) { r.checked = true; switchViewContext('ecmwf'); }
     }
 }
 
-// Replaces the old setAppMode
+// Check if current dual-mode selection should use shared colorbar
+function shouldUseSharedColorbar() {
+    if (appMode !== 'dual') return false;
+    
+    const dpirdVar = document.querySelector('input[name="vItem"]:checked')?.value;
+    const ecmwfVar = ecmwfState.currentVar;
+    
+    if (!dpirdVar || !ecmwfVar) return false;
+    
+    // Check if ECMWF var maps to DPIRD var
+    const mappedDpird = ECMWF_DPIRD_VAR_MAP[ecmwfVar];
+    return mappedDpird === dpirdVar;
+}
+
+// Update ECMWF colorbar (for dual mode)
+function updateEcmwfColorbar(vMin, vMax, varName, units, longName, timeLabel) {
+    const maxEl = document.getElementById('ecmwf-max-val');
+    const minEl = document.getElementById('ecmwf-min-val');
+    const varEl = document.getElementById('ecmwf-active-var');
+    const unitsEl = document.getElementById('ecmwf-active-units');
+    const timeEl = document.getElementById('ecmwf-active-time');
+    const colorBar = document.getElementById('ecmwf-color-bar');
+    
+    if (maxEl) maxEl.textContent = typeof vMax === 'number' ? vMax.toFixed(1) : '--';
+    if (minEl) minEl.textContent = typeof vMin === 'number' ? vMin.toFixed(1) : '--';
+    if (varEl) varEl.textContent = longName || varName || '--';
+    if (unitsEl) unitsEl.textContent = units ? `(${units})` : '--';
+    if (timeEl) timeEl.textContent = timeLabel || '--';
+    
+    // Update gradient (use ECMWF colormap)
+    if (colorBar && typeof getEcmwfCmapName === 'function' && typeof getEcmwfCmapDef === 'function') {
+        const cmapName = getEcmwfCmapName(varName);
+        const cmapDef = getEcmwfCmapDef(cmapName);
+        colorBar.style.background = cmapDef.gradient;
+    }
+}
+
+// Update DPIRD colorbar (for consistency)
+function updateDpirdColorbar(vMin, vMax, varName, units, timeLabel) {
+    const maxEl = document.getElementById('max-val');
+    const minEl = document.getElementById('min-val');
+    const varEl = document.getElementById('active-var');
+    const unitsEl = document.getElementById('active-units');
+    const timeEl = document.getElementById('active-time');
+    const colorBar = document.getElementById('color-bar');
+    
+    if (maxEl) maxEl.textContent = typeof vMax === 'number' ? vMax.toFixed(1) : '--';
+    if (minEl) minEl.textContent = typeof vMin === 'number' ? vMin.toFixed(1) : '--';
+    if (varEl) varEl.textContent = varName || '--';
+    if (unitsEl) unitsEl.textContent = units ? `(${units})` : '--';
+    if (timeEl) timeEl.textContent = timeLabel || '--';
+    
+    // Update gradient
+    if (colorBar) {
+        const theme = colorMaps[varName] || colorMaps['default'];
+        colorBar.style.background = theme.gradient;
+    }
+}
+
+// Update colorbar visibility based on dual mode selection
+function updateColorbarVisibility() {
+    const ecmwfColorbar = document.getElementById('ecmwf-colorbar-card');
+    const dpirdColorbar = document.getElementById('dpird-colorbar-card');
+    const dpirdColorbarHeader = document.getElementById('dpird-colorbar-header');
+    
+    if (appMode === 'dual') {
+        if (shouldUseSharedColorbar()) {
+            // Single shared colorbar
+            if (ecmwfColorbar) ecmwfColorbar.classList.add('hidden');
+            if (dpirdColorbar) dpirdColorbar.classList.remove('hidden');
+            if (dpirdColorbarHeader) dpirdColorbarHeader.textContent = 'Shared (ECMWF + DPIRD)';
+        } else {
+            // Dual colorbars
+            if (ecmwfColorbar) ecmwfColorbar.classList.remove('hidden');
+            if (dpirdColorbar) dpirdColorbar.classList.remove('hidden');
+            if (dpirdColorbarHeader) dpirdColorbarHeader.textContent = 'DPIRD';
+        }
+    }
+}
+
+// Teardown map and clear state
+function teardownMap() {
+    disposePlayback(true);
+    if (leafletMap) {
+        leafletMap.remove();
+        leafletMap = null;
+    }
+    markers = [];
+    latestMapCoords = createDefaultMapState();
+    
+    const targetArea = document.getElementById('target-area');
+    if (window.Plotly && typeof Plotly.purge === 'function') {
+        Plotly.purge(targetArea);
+    }
+    targetArea.innerHTML = '';
+    targetArea.removeAttribute('class');
+    targetArea.removeAttribute('style');
+    
+    const rightUi = document.getElementById('right-ui-stack');
+    if (rightUi) rightUi.style.display = 'none';
+
+    const ecmwfOverlay = document.getElementById('ecmwf-time-overlay');
+    if (ecmwfOverlay) {
+        ecmwfOverlay.classList.add('hidden');
+        ecmwfOverlay.textContent = '--';
+    }
+    
+    const emptyState = document.getElementById('empty-state');
+    if (emptyState) emptyState.style.display = 'flex';
+    
+}
+
+function attachVariableListeners() {
+    const varStack = document.getElementById('varStack');
+    if (!varStack) return;
+    
+    varStack.querySelectorAll('input[name="vItem"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            validateDpirdConfig();
+            if (appMode === 'dual') {
+                updateColorbarVisibility();
+            }
+        });
+    });
+    
+    validateDpirdConfig();
+}
+
+function attachConfigChangeHandlers() {
+    if (configListenersAttached) return;
+    
+    const startInput = document.getElementById('startDate');
+    const endInput = document.getElementById('endDate');
+    const stationSelect = document.getElementById('stationDropdown');
+    const viewMode = document.getElementById('viewMode');
+    
+    if (startInput) {
+        startInput.addEventListener('change', validateDpirdConfig);
+        startInput.addEventListener('blur', validateDpirdConfig);
+        startInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                validateDpirdConfig();
+                const btn = document.getElementById('renderBtn');
+                if (btn && !btn.disabled) runVisualization();
+            }
+        });
+    }
+    
+    if (endInput) {
+        endInput.addEventListener('change', validateDpirdConfig);
+        endInput.addEventListener('blur', validateDpirdConfig);
+        endInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                validateDpirdConfig();
+                const btn = document.getElementById('renderBtn');
+                if (btn && !btn.disabled) runVisualization();
+            }
+        });
+    }
+    
+    if (stationSelect) {
+        stationSelect.addEventListener('change', validateDpirdConfig);
+        stationSelect.addEventListener('blur', validateDpirdConfig);
+        stationSelect.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                validateDpirdConfig();
+                const btn = document.getElementById('renderBtn');
+                if (btn && !btn.disabled) runVisualization();
+            }
+        });
+    }
+    
+    if (viewMode) {
+        viewMode.addEventListener('change', toggleViewUI);
+    }
+    
+    // Wind component radio buttons (for graph mode)
+    document.querySelectorAll('input[name="windComponent"]').forEach(r => {
+        r.addEventListener('change', validateDpirdConfig);
+    });
+    
+    configListenersAttached = true;
+}
+
+function updateVariableDependentUI() {
+    const windCard = document.getElementById('windComponentSelector');
+    const mode = document.getElementById('viewMode')?.value || 'map';
+    const selectedVar = document.querySelector('input[name="vItem"]:checked')?.value;
+
+    // Show wind component selector only in graph mode for wind_3m
+    const shouldShowWind = mode === 'graph' && selectedVar === 'wind_3m';
+    if (windCard) {
+        windCard.classList.toggle('hidden', !shouldShowWind);
+        if (!shouldShowWind) {
+            const defaultOption = document.querySelector('input[name="windComponent"][value="speed"]');
+            if (defaultOption) defaultOption.checked = true;
+        }
+    }
+}
+
+// switchViewContext to handle dual mode, selects appropriate sidebars and colorbars
 function switchViewContext(mode) {
     const prevMode = appMode;
     appMode = mode; 
+    
     const dpirdSidebar = document.getElementById('dpirdSidebar');
     const ecmwfSidebar = document.getElementById('ecmwfSidebar');
+    const dualSidebar = document.getElementById('dualSidebar');
+    const ecmwfColorbar = document.getElementById('ecmwf-colorbar-card');
+    const dpirdColorbar = document.getElementById('dpird-colorbar-card');
+    const dpirdColorbarHeader = document.getElementById('dpird-colorbar-header');
+    // Render buttons
+    const dpirdRenderBtn = document.getElementById('renderBtn');
+    const ecmwfRenderBtn = document.getElementById('ecmwfRenderBtn');
+    const dualRenderBtn = document.getElementById('dualRenderBtn');
+
+    // Check if elements exist before manipulating
+    console.log('switchViewContext called:', mode);
+    console.log('dpirdSidebar exists:', !!dpirdSidebar);
+    console.log('ecmwfSidebar exists:', !!ecmwfSidebar);
+    console.log('dualSidebar exists:', !!dualSidebar);
+
+    // Hide all sidebars first
+    if (dpirdSidebar) dpirdSidebar.classList.add('hidden');
+    if (ecmwfSidebar) ecmwfSidebar.classList.add('hidden');
+    if (dualSidebar) dualSidebar.classList.add('hidden');
+    
+    // Hide all colorbars first
+    if (ecmwfColorbar) ecmwfColorbar.classList.add('hidden');
+    if (dpirdColorbar) dpirdColorbar.classList.add('hidden');
+    // Hide all render buttons first
+    if (dpirdRenderBtn) dpirdRenderBtn.style.display = 'none';
+    if (ecmwfRenderBtn) ecmwfRenderBtn.style.display = 'none';
+    if (dualRenderBtn) dualRenderBtn.style.display = 'none';
     
     if (mode === 'dpird') {
         if (dpirdSidebar) dpirdSidebar.classList.remove('hidden');
-        if (ecmwfSidebar) ecmwfSidebar.classList.add('hidden');
+        if (dpirdColorbar) dpirdColorbar.classList.remove('hidden');
+        if (dpirdColorbarHeader) dpirdColorbarHeader.textContent = 'DPIRD';
+        if (dpirdRenderBtn) dpirdRenderBtn.style.display = 'block';
     } else if (mode === 'ecmwf') {
-        if (dpirdSidebar) dpirdSidebar.classList.add('hidden');
         if (ecmwfSidebar) ecmwfSidebar.classList.remove('hidden');
+        // Use DPIRD colorbar element but label it for ECMWF (single colorbar)
+        if (dpirdColorbar) dpirdColorbar.classList.remove('hidden');
+        if (dpirdColorbarHeader) dpirdColorbarHeader.textContent = 'ECMWF';
+        if (ecmwfRenderBtn) ecmwfRenderBtn.style.display = 'block';
+    } else if (mode === 'dual') {
+        // Show both sidebars and dual controls
+        if (dpirdSidebar) dpirdSidebar.classList.remove('hidden');
+        if (ecmwfSidebar) ecmwfSidebar.classList.remove('hidden');
+        if (dualSidebar) dualSidebar.classList.remove('hidden');
+        if (dualRenderBtn) dualRenderBtn.style.display = 'block';
+
+        // Update colorbar visibility 
+        if (shouldUseSharedColorbar()) {
+            // Single shared colorbar
+            if (dpirdColorbar) dpirdColorbar.classList.remove('hidden');
+            if (dpirdColorbarHeader) dpirdColorbarHeader.textContent = 'Shared (ECMWF + DPIRD)';
+            const coolwarmDef = typeof getEcmwfCmapDef === 'function' 
+            ? getEcmwfCmapDef('coolwarm') 
+            : { gradient: 'linear-gradient(to top, #3b4cc0, #bcb8b7, #b40426)' };
+        const colorBar = document.getElementById('color-bar');
+        if (colorBar) colorBar.style.background = coolwarmDef.gradient;   
+        } else {
+            // Dual colorbars
+            if (ecmwfColorbar) ecmwfColorbar.classList.remove('hidden');
+            if (dpirdColorbar) dpirdColorbar.classList.remove('hidden');
+            if (dpirdColorbarHeader) dpirdColorbarHeader.textContent = 'DPIRD';
+        }
     } else {
-        if (dpirdSidebar) dpirdSidebar.classList.add('hidden');
-        if (ecmwfSidebar) ecmwfSidebar.classList.add('hidden');
+        // mode === 'none'
+        teardownMap();
+        const statusText = document.getElementById('status-text');
+        if (statusText) statusText.innerText = 'No datasets loaded. Select sources above.';
     }
 
-    // Cleanup Logic (Merged from old setAppMode)
+    // Handle ECMWF overlay visibility
     const ecmwfOverlay = document.getElementById('ecmwf-time-overlay');
-    if (mode !== 'ecmwf' && ecmwfOverlay) {
+    if (mode !== 'ecmwf' && mode !== 'dual' && ecmwfOverlay) {
         ecmwfOverlay.classList.add('hidden');
         ecmwfOverlay.textContent = '--';
     }
 
+    // Snapshot and restore logic for mode transitions
     const statusText = document.getElementById('status-text');
+    const rightUi = document.getElementById('right-ui-stack');
 
-    // If we are leaving DPIRD, snapshot its visual state then reset map/plot
-    if (prevMode === 'dpird' && mode === 'ecmwf') {
+    // Leaving DPIRD → Snapshot DPIRD state
+    if (prevMode === 'dpird' && (mode === 'ecmwf' || mode === 'dual')) {
+        // Snapshot DPIRD timeline position
         if (dpirdViewState.mode === 'map') {
             dpirdViewState.timeIdx = playback.currentIdx || 0;
         }
-        teardownMap(); // Clear map for ECMWF
-        if (rightUi) rightUi.style.display = 'none';
-        if (statusText) {
-            statusText.innerText = 'ECMWF mode selected. Waiting for ECMWF configuration...';
+        
+        // Only teardown if going to ECMWF (not dual)
+        if (mode === 'ecmwf') {
+            teardownMap();
+            if (rightUi) rightUi.style.display = 'none';
+            if (statusText) {
+                statusText.innerText = 'ECMWF mode selected. Configure and click Render ECMWF.';
+            }
+            
+            // Restore ECMWF map if already loaded
+            if (typeof ecmwfState !== 'undefined' && ecmwfState.timeLabels.length) {
+                if (typeof setupEcmwfMap === 'function') {
+                    setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
+                }
+            }
         }
-        // If we already have an ECMWF dataset loaded, restore its view
-        if (ecmwfState.timeLabels.length) {
-            setupEcmwfMap({
-                time_labels: ecmwfState.timeLabels
-            }, true);
-        }
+        // In dual mode, keep DPIRD map intact
         return;
     }
 
-    // If we are returning to DPIRD, restore its previous visualisation if any
-    if (prevMode === 'ecmwf' && mode === 'dpird') {
-        if (statusText && statusText.innerText.startsWith('ECMWF mode selected')) {
-            statusText.innerText = 'Waiting for data...';
+    // Leaving ECMWF → Snapshot ECMWF state
+    if (prevMode === 'ecmwf' && (mode === 'dpird' || mode === 'dual')) {      
+        // Only teardown if going to DPIRD (not dual)
+        if (mode === 'dpird') {
+            teardownMap();
+            if (statusText && statusText.innerText.startsWith('ECMWF mode selected')) {
+                statusText.innerText = 'DPIRD mode. Configure and click Render DPIRD.';
+            }
+            
+            // Restore DPIRD map if available
+            if (dpirdViewState.mode === 'map' && dpirdViewState.varName && typeof renderMap === 'function') {
+                renderMap(dpirdViewState.varName).then(() => {
+                    const idx = Math.max(0, Math.min(dpirdViewState.timeIdx || 0, (playback.totalSteps || 1) - 1));
+                    if (playback.slider && typeof playback.updateMarkers === 'function') {
+                        playback.slider.value = idx;
+                        playback.updateMarkers(idx);
+                    }
+                }).catch(err => console.error(err));
+            } else if (dpirdViewState.mode === 'graph' && dpirdViewState.datasetVar && dpirdViewState.displayLabel && typeof renderGraph === 'function') {
+                renderGraph(dpirdViewState.datasetVar, dpirdViewState.displayLabel).catch(err => console.error(err));
+            }
         }
-        // Restore DPIRD map state if available
-        if (dpirdViewState.mode === 'map' && dpirdViewState.varName) {
-            // Re-render map and restore timeline position
-            renderMap(dpirdViewState.varName).then(() => {
-                const idx = Math.max(0, Math.min(dpirdViewState.timeIdx || 0, (playback.totalSteps || 1) - 1));
-                if (playback.slider && typeof playback.updateMarkers === 'function') {
-                    playback.slider.value = idx;
-                    playback.updateMarkers(idx);
-                }
-            }).catch(err => console.error(err));
-        } else if (dpirdViewState.mode === 'graph' && dpirdViewState.datasetVar && dpirdViewState.displayLabel) {
-            renderGraph(dpirdViewState.datasetVar, dpirdViewState.displayLabel).catch(err => console.error(err));
-        }
+        // In dual mode, keep ECMWF map intact
         return;
     }
     
-    // Default Empty State
+    // Entering dual mode from none
+    if (prevMode === 'none' && mode === 'dual') {
+        if (statusText) statusText.innerText = 'Dual mode. Configure both layers and click Render Both Layers.';
+        return;
+    }
+    
+    // Default: Entering 'none' mode
     if (mode === 'none') {
         teardownMap();
         if (statusText) statusText.innerText = 'No datasets loaded. Select sources above.';
     }
-}
-
-function onDataModeChange() {
-    const select = document.getElementById('dataMode');
-    const mode = select ? select.value : 'dpird';
-    setAppMode(mode);
 }
 
 function clamp01(value) {
@@ -400,229 +702,128 @@ function computeScalarColor(rawValue, min, max) {
     return { pct, color: `rgb(${r}, 50, ${b})` };
 }
 
-function applyDefaultFillStyles() {
-    if (!fillLayers.length) return;
-    fillLayers.forEach(layer => {
-        if (!layer || typeof layer.setStyle !== 'function') return;
-        layer.setStyle(DEFAULT_FILL_STYLE);
-    });
-}
-
-function applyFillColors(timeIdx) {
-    if (!fillPaintState.enabled) return;
-    if (!fillLayers.length || !Array.isArray(fillPaintState.values) || !fillPaintState.values.length) return;
-    const safeIdx = Math.max(0, Math.min(timeIdx, fillPaintState.values.length - 1));
-    const valuesForTime = Array.isArray(fillPaintState.values[safeIdx]) ? fillPaintState.values[safeIdx] : [];
-    fillLayers.forEach((layer, idx) => {
-        if (!layer || typeof layer.setStyle !== 'function') return;
-        const val = valuesForTime[idx];
-        if (!Number.isFinite(val) || fillPaintState.vMin === null || fillPaintState.vMax === null) {
-            layer.setStyle(DEFAULT_FILL_STYLE);
-            return;
+function toggleViewUI() {
+    const mode = document.getElementById('viewMode')?.value || 'map';
+    const stationSelector = document.getElementById('stationSelector');
+    const timeSliderCard = document.getElementById('timeSliderCard');
+    
+    // Show station selector only in graph mode
+    if (stationSelector) {
+        stationSelector.classList.toggle('hidden', mode === 'map');
+    }
+    
+    // Hide time slider when switching modes (will be shown again on render)
+    if (timeSliderCard) {
+        timeSliderCard.classList.add('hidden');
+    }
+    
+    // Clean up visualizations when switching modes
+    if (mode === 'graph') {
+        if (leafletMap) {
+            teardownMap();
         }
-        const { color } = computeScalarColor(val, fillPaintState.vMin, fillPaintState.vMax);
-        layer.setStyle({
-            color,
-            weight: 0.8,
-            dashArray: null,
-            fillColor: color,
-            fillOpacity: 0.55
-        });
-        if (typeof layer.bringToBack === 'function') {
-            layer.bringToBack();
+    } else {
+        const targetArea = document.getElementById('target-area');
+        if (window.Plotly && typeof Plotly.purge === 'function') {
+            Plotly.purge(targetArea);
+            targetArea.innerHTML = '';
+            targetArea.removeAttribute('class');
+            targetArea.removeAttribute('style');
         }
-    });
-}
-
-async function setFillPaintEnabled(enabled) {
+        const rightUi = document.getElementById('right-ui-stack');
+        if (rightUi) rightUi.style.display = 'none';
+    }
+    
+    // Reset UI to waiting state
+    const emptyState = document.getElementById('empty-state');
+    if (emptyState) emptyState.style.display = 'flex';
+    
+    const spinner = document.getElementById('spinner');
+    if (spinner) spinner.style.display = 'none';
+    
     const statusText = document.getElementById('status-text');
-    if (!enabled) {
-        fillPaintState.enabled = false;
-        fillPaintState.loading = false;
-        applyDefaultFillStyles();
-        if (statusText && statusText.innerText.startsWith('Loading weighted')) {
-            statusText.innerText = 'Waiting for data...';
-        }
+    if (statusText) statusText.innerText = 'Waiting for data...';
+    
+    validateDpirdConfig();
+    updateVariableDependentUI();
+}
+
+// Handle configuration changes (used by event listeners)
+function handleConfigChange() {
+    validateDpirdConfig();
+}
+
+// Dual visualization render function 
+async function runDualVisualization() {
+    if (appMode !== 'dual') {
+        alert('Dual rendering requires both DPIRD and ECMWF datasets.');
+        return;
+    }
+    
+    if (!loadedDatasets.dpird || !loadedDatasets.ecmwf) {
+        alert('Please load both DPIRD and ECMWF datasets first.');
+        return;
+    }
+    
+    const dpirdVar = document.querySelector('input[name="vItem"]:checked')?.value;
+    if (!dpirdVar) {
+        alert('Please select a DPIRD variable first.');
+        return;
+    }
+    
+    if (!ecmwfState.currentVar) {
+        alert('Please configure ECMWF variable first (click "Render ECMWF" once).');
         return;
     }
 
-    if (!leafletMap) {
-        fillPaintState.enabled = false;
-        return;
-    }
-
-    if (!latestMapCoords.fillPoints.length) {
-        if (statusText) statusText.innerText = 'No fill circles available to colour.';
-        const toggle = document.getElementById('fillPaintToggle');
-        if (toggle) toggle.checked = false;
-        return;
-    }
-
-    if (!lastMapRequestBody || lastMapRequestBody.variable !== 'airTemperature') {
-        if (statusText) statusText.innerText = 'Colouring only applies to airTemperature.';
-        const toggle = document.getElementById('fillPaintToggle');
-        if (toggle) toggle.checked = false;
-        return;
-    }
-
-    if (fillPaintState.loading) return;
-
-    if (fillPaintState.values.length && fillPaintState.vMin !== null && fillPaintState.vMax !== null) {
-        fillPaintState.enabled = true;
-        applyFillColors(playback.currentIdx || 0);
-        if (statusText) statusText.innerText = 'Weighted fill values ready.';
-        return;
-    }
-
-    fillPaintState.loading = true;
-    if (statusText) statusText.innerText = 'Loading weighted fill values...';
+    setLoading(true, 'Rendering dual layers...');
+    
     try {
-        const res = await fetch('/fill_values', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(lastMapRequestBody)
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-
-        fillPaintState.values = Array.isArray(data.fill_values) ? data.fill_values : [];
-        fillPaintState.vMin = typeof data.v_min === 'number' ? data.v_min : null;
-        fillPaintState.vMax = typeof data.v_max === 'number' ? data.v_max : null;
-        const toggle = document.getElementById('fillPaintToggle');
-        if (!toggle || !toggle.checked) {
-            fillPaintState.enabled = false;
-            applyDefaultFillStyles();
-            return;
+        // Get ECMWF opacity from slider
+        const opacitySlider = document.getElementById('ecmwfOpacitySlider');
+        const ecmwfOpacity = opacitySlider ? parseInt(opacitySlider.value, 10) / 100 : 0.75;
+        
+        if (typeof updateEcmwfConfigFromUi === 'function') {
+            await updateEcmwfConfigFromUi();
         }
-        fillPaintState.enabled = true;
-        applyFillColors(playback.currentIdx || 0);
-        if (statusText) statusText.innerText = 'Weighted fill values ready.';
+        
+        const timeSlider = document.getElementById('ecmwfTimeSlider');
+        const stepSlider = document.getElementById('ecmwfStepSlider');
+        let tIdx = timeSlider ? parseInt(timeSlider.value, 10) : 0;
+        let sIdx = stepSlider ? parseInt(stepSlider.value, 10) : 0;
+        if (!Number.isFinite(tIdx)) tIdx = 0;
+        if (!Number.isFinite(sIdx)) sIdx = 0;
+        
+        // Setup map if needed (ECMWF first)
+        if (!leafletMap && typeof ecmwfState !== 'undefined' && ecmwfState.timeLabels.length) {
+            if (typeof setupEcmwfMap === 'function') {
+                setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
+            }
+        }
+        
+        // Render ECMWF layer with opacity
+        if (typeof renderEcmwfContourPlot === 'function') {
+            await renderEcmwfContourPlot(tIdx, sIdx, ecmwfOpacity);
+        }
+        
+        // Render DPIRD on top
+        if (dpirdVar && typeof renderMap === 'function') {
+            await renderMap(dpirdVar);
+        }
+        
+        // Update colorbar visibility
+        updateColorbarVisibility();
+        const rightUi = document.getElementById('right-ui-stack');
+        if (rightUi) rightUi.style.display = 'flex';   
+               
+        setLoading(false, 'Dual layer visualization ready.');
     } catch (err) {
-        console.error(err);
-        fillPaintState.enabled = false;
-        fillPaintState.values = [];
-        fillPaintState.vMin = null;
-        fillPaintState.vMax = null;
-        const toggle = document.getElementById('fillPaintToggle');
-        if (toggle) toggle.checked = false;
-        if (statusText) statusText.innerText = err.message;
-        applyDefaultFillStyles();
-    } finally {
-        fillPaintState.loading = false;
+        console.error('Dual visualization error:', err);
+        setLoading(false, `Error: ${err.message}`);
     }
 }
 
-function clearRadiusOverlays() {
-    if (!radiusLayers.length) return;
-    radiusLayers.forEach(layer => {
-        if (leafletMap && layer && leafletMap.hasLayer(layer)) {
-            leafletMap.removeLayer(layer);
-        }
-    });
-    radiusLayers = [];
-}
-
-function updateRadiusOverlays(enabled) {
-    clearRadiusOverlays();
-    if (!enabled || !leafletMap) return;
-    const points = Array.isArray(latestMapCoords.points) ? latestMapCoords.points : [];
-    if (!points.length) return;
-    radiusLayers = points.map((point) => {
-        const { lat, lon } = point || {};
-        if (typeof lat !== 'number' || typeof lon !== 'number') return null;
-        const circle = L.circle([lat, lon], {
-            radius: COVERAGE_RADIUS_METERS,
-            color: 'rgba(37, 99, 235, 0.65)',
-            weight: 1.5,
-            dashArray: '6 4',
-            fillColor: 'rgba(37, 99, 235, 0.18)',
-            fillOpacity: 0.3
-        });
-        circle.addTo(leafletMap);
-        return circle;
-    }).filter(Boolean);
-}
-
-function clearFillOverlays() {
-    if (!fillLayers.length) return;
-    fillLayers.forEach(layer => {
-        if (leafletMap && layer && leafletMap.hasLayer(layer)) {
-            leafletMap.removeLayer(layer);
-        }
-    });
-    fillLayers = [];
-}
-
-function updateFillOverlays(enabled) {
-    clearFillOverlays();
-    if (!enabled || !leafletMap) return;
-    const candidates = Array.isArray(latestMapCoords.fillPoints) ? latestMapCoords.fillPoints : [];
-    if (!candidates.length) return;
-    fillLayers = candidates.map((point) => {
-        const { lat, lon } = point || {};
-        if (typeof lat !== 'number' || typeof lon !== 'number') return null;
-        const circle = L.circle([lat, lon], {
-            radius: COVERAGE_RADIUS_METERS,
-            ...DEFAULT_FILL_STYLE
-        });
-        circle.addTo(leafletMap);
-        if (typeof circle.bringToBack === 'function') circle.bringToBack();
-        return circle;
-    }).filter(Boolean);
-    if (fillPaintState.enabled && fillPaintState.values.length) {
-        applyFillColors(playback.currentIdx || 0);
-    }
-}
-
-function clearHullOverlay() {
-    if (leafletMap && hullLayer && leafletMap.hasLayer(hullLayer)) {
-        leafletMap.removeLayer(hullLayer);
-    }
-    hullLayer = null;
-    hullState.boundaryStations = [];
-    hullState.interiorStations = [];
-}
-
-function updateHullOverlay(enabled) {
-    clearHullOverlay();
-    if (!enabled || !leafletMap) return;
-    const hullInfo = (latestMapCoords && latestMapCoords.hull) ? latestMapCoords.hull : EMPTY_HULL_STATE;
-    const boundary = Array.isArray(hullInfo.boundary) ? hullInfo.boundary : [];
-    const interior = Array.isArray(hullInfo.interior) ? hullInfo.interior : [];
-    const polygonCoords = Array.isArray(hullInfo.polygon) ? hullInfo.polygon : [];
-
-    if (!boundary.length || !polygonCoords.length) {
-        hullState.boundaryStations = [];
-        hullState.interiorStations = [];
-        return;
-    }
-
-    hullState.boundaryStations = boundary.map(p => (p && p.station) || null).filter(Boolean);
-    hullState.interiorStations = interior.map(p => (p && p.station) || null).filter(Boolean);
-
-    const latLngs = polygonCoords
-        .map((pair) => (Array.isArray(pair) && pair.length === 2) ? [pair[0], pair[1]] : null)
-        .filter((coords) => Array.isArray(coords) && typeof coords[0] === 'number' && typeof coords[1] === 'number');
-
-    if (!latLngs.length) return;
-
-    if (hullInfo.hullType === 'polyline' || latLngs.length === 2) {
-        hullLayer = L.polyline(latLngs, {
-            color: '#f97316',
-            weight: 2,
-            dashArray: '4 6'
-        }).addTo(leafletMap);
-        return;
-    }
-
-    hullLayer = L.polygon(latLngs, {
-        color: '#f97316',
-        weight: 2,
-        fillColor: 'rgba(249, 115, 22, 0.18)',
-        fillOpacity: 0.25
-    }).addTo(leafletMap);
-}
-
+// Playback functionality (DPIRD only for now)
 function ensurePlaybackControl(mapInstance) {
     if (!mapInstance) return;
     if (!playback.control) {
@@ -756,229 +957,9 @@ function togglePlayback() {
     }
 }
 
-function handleConfigChange() {
-    disposePlayback(false);
-    clearRadiusOverlays();
-    clearHullOverlay();
-    clearFillOverlays();
-    const fillToggle = document.getElementById('fillToggle');
-    if (fillToggle) fillToggle.checked = false;
-    const fillPaintToggle = document.getElementById('fillPaintToggle');
-    if (fillPaintToggle) fillPaintToggle.checked = false;
-    fillPaintState.enabled = false;
-    fillPaintState.values = [];
-    fillPaintState.vMin = null;
-    fillPaintState.vMax = null;
-    lastMapRequestBody = null;
-    latestMapCoords = createDefaultMapState();
-    validateDpirdConfig();
-}
-
-function attachConfigChangeHandlers() {
-    if (configListenersAttached) return;
-    const startInput = document.getElementById('startDate');
-    const endInput = document.getElementById('endDate');
-    const stationSelect = document.getElementById('stationDropdown');
-    if (startInput) {
-        startInput.addEventListener('change', handleConfigChange);
-        startInput.addEventListener('blur', validateDpirdConfig);
-        startInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                validateDpirdConfig();
-                const btn = document.getElementById('renderBtn');
-                if (btn && !btn.disabled) runVisualization();
-            }
-        });
-    }
-    if (endInput) {
-        endInput.addEventListener('change', handleConfigChange);
-        endInput.addEventListener('blur', validateDpirdConfig);
-        endInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                validateDpirdConfig();
-                const btn = document.getElementById('renderBtn');
-                if (btn && !btn.disabled) runVisualization();
-            }
-        });
-    }
-    if (stationSelect) {
-        stationSelect.addEventListener('change', handleConfigChange);
-        stationSelect.addEventListener('blur', validateDpirdConfig);
-        stationSelect.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                validateDpirdConfig();
-                const btn = document.getElementById('renderBtn');
-                if (btn && !btn.disabled) runVisualization();
-            }
-        });
-    }
-    document.querySelectorAll('input[name="windComponent"]').forEach(r => r.addEventListener('change', handleConfigChange));
-    const radiusToggle = document.getElementById('radiusToggle');
-    if (radiusToggle) {
-        radiusToggle.addEventListener('change', (evt) => {
-            if (!leafletMap) return;
-            updateRadiusOverlays(evt.target.checked);
-        });
-    }
-    const borderToggle = document.getElementById('borderToggle');
-    if (borderToggle) {
-        borderToggle.addEventListener('change', (evt) => {
-            if (!leafletMap) return;
-            updateHullOverlay(evt.target.checked);
-        });
-    }
-    const fillToggle = document.getElementById('fillToggle');
-    if (fillToggle) {
-        fillToggle.addEventListener('change', (evt) => {
-            if (!leafletMap) return;
-            updateFillOverlays(evt.target.checked);
-            if (!evt.target.checked) {
-                const fillPaintToggle = document.getElementById('fillPaintToggle');
-                if (fillPaintToggle) fillPaintToggle.checked = false;
-                setFillPaintEnabled(false);
-            } else if (fillPaintState.enabled && fillPaintState.values.length) {
-                applyFillColors(playback.currentIdx || 0);
-            }
-        });
-    }
-    const fillPaintToggle = document.getElementById('fillPaintToggle');
-    if (fillPaintToggle) {
-        fillPaintToggle.addEventListener('change', async (evt) => {
-            if (!leafletMap) {
-                evt.target.checked = false;
-                return;
-            }
-            if (evt.target.checked) {
-                const fillToggleInstance = document.getElementById('fillToggle');
-                if (fillToggleInstance && !fillToggleInstance.checked) {
-                    fillToggleInstance.checked = true;
-                    updateFillOverlays(true);
-                }
-            }
-            await setFillPaintEnabled(evt.target.checked);
-        });
-    }
-    configListenersAttached = true;
-}
-
-function teardownMap() {
-    disposePlayback(true);
-    if (leafletMap) {
-        leafletMap.remove();
-        leafletMap = null;
-    }
-    markers = [];
-    clearRadiusOverlays();
-    clearHullOverlay();
-    clearFillOverlays();
-    fillPaintState.enabled = false;
-    fillPaintState.values = [];
-    fillPaintState.vMin = null;
-    fillPaintState.vMax = null;
-    const paintToggle = document.getElementById('fillPaintToggle');
-    if (paintToggle) paintToggle.checked = false;
-    lastMapRequestBody = null;
-    latestMapCoords = createDefaultMapState();
-    const targetArea = document.getElementById('target-area');
-    if (window.Plotly && typeof Plotly.purge === 'function') {
-        Plotly.purge(targetArea);
-    }
-    targetArea.innerHTML = '';
-    targetArea.removeAttribute('class');
-    targetArea.removeAttribute('style');
-    document.getElementById('right-ui-stack').style.display = 'none';
-
-    const ecmwfOverlay = document.getElementById('ecmwf-time-overlay');
-    if (ecmwfOverlay) {
-        ecmwfOverlay.classList.add('hidden');
-        ecmwfOverlay.textContent = '--';
-    }
-}
-
-function updateVariableDependentUI() {
-    const windCard = document.getElementById('windComponentSelector');
-    const radiusCard = document.getElementById('radiusSelector');
-    const radiusToggle = document.getElementById('radiusToggle');
-    const borderToggle = document.getElementById('borderToggle');
-    const fillToggle = document.getElementById('fillToggle');
-    const fillPaintToggle = document.getElementById('fillPaintToggle');
-    const mode = document.getElementById('viewMode').value;
-    const selectedVar = document.querySelector('input[name="vItem"]:checked')?.value;
-
-    const shouldShowWind = mode === 'graph' && selectedVar === 'wind_3m';
-    if (windCard) {
-        windCard.classList.toggle('hidden', !shouldShowWind);
-        if (!shouldShowWind) {
-            const defaultOption = document.querySelector('input[name="windComponent"][value="speed"]');
-            if (defaultOption) defaultOption.checked = true;
-        }
-    }
-
-    const shouldShowRadius = mode === 'map' && selectedVar === 'airTemperature';
-    if (radiusCard) {
-        radiusCard.classList.toggle('hidden', !shouldShowRadius);
-        if (!shouldShowRadius) {
-            if (radiusToggle) radiusToggle.checked = false;
-            if (borderToggle) borderToggle.checked = false;
-            if (fillPaintToggle) fillPaintToggle.checked = false;
-            clearRadiusOverlays();
-            clearHullOverlay();
-            setFillPaintEnabled(false);
-        } else {
-            const hasPoints = Array.isArray(latestMapCoords.points) && latestMapCoords.points.length > 0;
-            if (radiusToggle && radiusToggle.checked && leafletMap && hasPoints) {
-                updateRadiusOverlays(true);
-            }
-            if (borderToggle && borderToggle.checked && leafletMap && hasPoints) {
-                updateHullOverlay(true);
-            }
-            if (fillToggle && fillToggle.checked && leafletMap && latestMapCoords.fillPoints.length) {
-                updateFillOverlays(true);
-                if (fillPaintToggle && fillPaintToggle.checked) {
-                    applyFillColors(playback.currentIdx || 0);
-                }
-            }
-        }
-    }
-}
-
-function attachVariableListeners() {
-    const varStack = document.getElementById('varStack');
-    if (!varStack) return;
-    varStack.querySelectorAll('input[name="vItem"]').forEach(radio => {
-        radio.addEventListener('change', () => {
-            handleConfigChange();
-            updateVariableDependentUI();
-            validateDpirdConfig();
-        });
-    });
-    updateVariableDependentUI();
-    validateDpirdConfig();
-}
-
-function toggleViewUI() {
-    const mode = document.getElementById('viewMode').value;
-    document.getElementById('stationSelector').classList.toggle('hidden', mode === 'map');
-    document.getElementById('timeSliderCard').classList.add('hidden');
-    if (mode === 'graph') {
-        teardownMap();
-    } else if (window.Plotly && typeof Plotly.purge === 'function') {
-        const targetArea = document.getElementById('target-area');
-        Plotly.purge(targetArea);
-        targetArea.innerHTML = '';
-        targetArea.removeAttribute('class');
-        targetArea.removeAttribute('style');
-        document.getElementById('right-ui-stack').style.display = 'none';
-    }
-    document.getElementById('empty-state').style.display = 'flex';
-    document.getElementById('spinner').style.display = 'none';
-    document.getElementById('status-text').innerText = 'Waiting for data...';
-    validateDpirdConfig();
-    updateVariableDependentUI();
-}
-
+// Listen for variable changes in dual mode (at end of file, before closing)
 document.addEventListener('DOMContentLoaded', () => {
-    updateContextSwitcher();
+    // Init acacia date inputs and listeners
     const chkDpird = document.getElementById('chkDpird');
     const chkEcmwf = document.getElementById('chkEcmwf');
     const acaciaStart = document.getElementById('acaciaStartDate');
@@ -999,4 +980,36 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     updateAcaciaDateUI();
+    // Listener for DPIRD variable changes to update colorbar visibility
+    const varStack = document.getElementById('varStack');
+    if (varStack) {
+        varStack.addEventListener('change', () => {
+            if (appMode === 'dual') {
+                updateColorbarVisibility();
+            }
+        });
+    }
+    
+    // Add listener for ECMWF variable changes to update colorbar visibility
+    const ecmwfVarSelect = document.getElementById('ecmwfVarSelect');
+    if (ecmwfVarSelect) {
+        ecmwfVarSelect.addEventListener('change', () => {
+            if (appMode === 'dual') {
+                updateColorbarVisibility();
+            }
+        });
+    }
+    setTimeout(() => {
+        updateContextSwitcher(); 
+        
+        // If both datasets are already loaded on init, force dual mode
+        if (loadedDatasets.dpird && loadedDatasets.ecmwf) {
+            console.log('Both datasets loaded on init, forcing dual mode');
+            const dualRadio = document.querySelector('input[name="viewContext"][value="dual"]');
+            if (dualRadio) {
+                dualRadio.checked = true;
+                switchViewContext('dual');
+            }
+        }
+    }, 100);
 });

@@ -4,8 +4,9 @@ import os
 import pandas as pd
 import numpy as np
 import math
+import dask
 
-from services.map_processing import build_spatial_overlays, compute_fill_circles, compute_fill_values
+from services.map_processing import compute_fill_values
 from services.acacia_get import ECMWFOperationalService, DPIRDService
 
 app = Flask(__name__)
@@ -23,7 +24,8 @@ ds_wa = None  # DPIRD dataset restricted to WA bounds
 _dpird_dataset_id = None  # identifier for current DPIRD dataset (filepath)
 _dpird_map_cache = {}  # cache for build_map_dataset results
 _ecmwf_dataset_id= None
-_ecmwf_map_cache= {}
+_ecmwf_minmax_cache= {} #cache for vmin,vmax of ecmwf
+MAX_CACHE_SIZE_ecmwf = 100
 ecmwf_ds = None  # ECMWF dataset
 
 ecmwf_meta = {
@@ -44,11 +46,27 @@ ecmwf_meta = {
     "var_map": {},         # mapping of display vars -> underlying components
 }
 
+WIND_LONG_NAMES = {
+        'wind10': '10 metre wind speed',
+        'wind250': 'Wind speed at 250 hPa',
+        'wind500': 'Wind speed at 500 hPa',
+        'wind850': 'Wind speed at 850 hPa',
+        'wind1000': 'Wind speed at 1000 hPa',
+    }
 
 def _replace_nan(value):
     if isinstance(value, float) and math.isnan(value):
         return None
     return value
+
+"""Add entry to cache with LRU eviction if full."""
+def _ecmwf_cache_set(key, value):
+    global _ecmwf_minmax_cache
+    if len(_ecmwf_minmax_cache) >= MAX_CACHE_SIZE_ecmwf:
+        oldest_key = next(iter(_ecmwf_minmax_cache))
+        del _ecmwf_minmax_cache[oldest_key]
+        print(f"⚠ Cache full, evicted: {oldest_key[0]} [{oldest_key[2]}:{oldest_key[3]}]")
+    _ecmwf_minmax_cache[key] = value
 
 
 def _serialize_frames(frames):
@@ -466,15 +484,24 @@ def build_map_dataset(config):
     if 'station' in subset.coords:
         subset = subset.sortby('station')
 
-    times_raw = pd.to_datetime(subset.time.values)
-    if len(times_raw) > 100:
-        indices = np.linspace(0, len(times_raw) - 1, 100, dtype=int)
-        subset = subset.isel(time=indices)
+    # Resample logic is broken. Resampling improves performance
+    # However it breaks Timeline control to no longer use 15min native time resolution
+    # times_raw = pd.to_datetime(subset.time.values)
+    # if len(times_raw) > 100:
+    #     total_duration = times_raw[-1] - times_raw[0]
+    #     target_interval = total_duration / 100
+    #     interval_minutes= max(15, int(target_interval.total_seconds() / 60 / 15) * 15)
+    #     resample_rule= f"{interval_minutes}min"
+        
+    #     subset= subset.resample(time=resample_rule).mean(skipna=True)
 
+    print(f"🧮 Processing {subset.time.size} timesteps from {start_date} to {end_date}...")
     times = pd.to_datetime(subset.time.values)
     lats = subset.lat.values.flatten().tolist()
     lons = subset.lon.values.flatten().tolist()
 
+    print(f"✅ Completed spatial setup: {len(lats)} stations, {len(times)} timesteps")
+    
     if 'station' in subset.coords:
         station_names = [str(s) for s in subset.station.values.flatten()]
     else:
@@ -490,17 +517,16 @@ def build_map_dataset(config):
             "station": name
         })
 
-    hull_overlays = build_spatial_overlays(station_points)
-    fill_circles = compute_fill_circles(hull_overlays.get("polygon", []), station_points)
-
     is_combined_wind = (var == 'wind_3m')
     target_var_for_scale = 'wind_3m_speed' if is_combined_wind else var
 
     if target_var_for_scale not in subset.data_vars:
         raise ValueError(f"Variable '{var}' not available in dataset")
 
+    print(f"📊 Computing vmin/vmax for {target_var_for_scale}...")
     v_min = float(subset[target_var_for_scale].min(skipna=True).values)
     v_max = float(subset[target_var_for_scale].max(skipna=True).values)
+    print(f"✅ Range: {v_min:.2f} to {v_max:.2f}")
 
     values_over_time = []
     for t in subset.time:
@@ -518,13 +544,13 @@ def build_map_dataset(config):
             frame = [float(x) if np.isfinite(x) else None for x in frame_data]
         values_over_time.append(frame)
 
+    print(f"✅ Frame extraction complete")
+
     return {
         "lats": lats,
         "lons": lons,
         "stations": station_names,
         "station_points": station_points,
-        "hull": hull_overlays,
-        "fill_circles": fill_circles,
         "time_labels": times.strftime('%Y-%m-%d %H:%M').tolist(),
         "values": values_over_time,
         "v_min": v_min,
@@ -690,7 +716,7 @@ def upload_file():
         # time dimension when available, but fall back cleanly if that
         # environment is not present.
         try:
-            ds = xr.open_dataset(filepath, chunks={"time": 64})
+            ds = xr.open_dataset(filepath, chunks={"time": 4096})
         except Exception:
             ds = xr.open_dataset(filepath)
 
@@ -705,15 +731,15 @@ def upload_file():
             lat_cond = (ds.lat >= wa_lat_bounds[0]) & (ds.lat <= wa_lat_bounds[1])
             lon_cond = (ds.lon >= wa_lon_bounds[0]) & (ds.lon <= wa_lon_bounds[1])
             mask = lat_cond & lon_cond
-            # If this is a dask-backed array, compute the mask before using
-            # it for indexing, as recommended by xarray.
-            try:
-                has_chunks = getattr(mask, "chunks", None) is not None
-            except Exception:
-                has_chunks = False
-            if has_chunks:
+            # If this is a dask-backed array, compute the mask before indexing
+            if hasattr(mask, 'chunks'):
+                print(" Computing WA bounds mask...")
                 mask = mask.compute()
+            print(f" Applying WA bounds mask...")
             ds_wa = ds.where(mask, drop=True)
+            if hasattr(ds_wa, 'chunks'):
+                print("💾 Persisting WA subset to memory...")
+                ds_wa = ds_wa.persist()
 
         # Reset DPIRD map cache whenever a new dataset is uploaded
         _dpird_dataset_id = filepath
@@ -901,7 +927,7 @@ def ecmwf_config():
     the global ecmwf_meta selection and compute min/max values across the
     requested date range for use in a consistent colour scale.
     """
-    global ecmwf_meta
+    global ecmwf_meta, _ecmwf_minmax_cache
     try:
         if ecmwf_ds is None:
             raise ValueError("No ECMWF dataset loaded")
@@ -910,17 +936,22 @@ def ecmwf_config():
         var_name = payload.get('var_name')
         if not var_name:
             raise ValueError("ECMWF variable selection missing")
-
+        
         var_map = ecmwf_meta.get("var_map") or {}
         mapping = var_map.get(var_name)
 
         # Determine a base DataArray to drive frame counting/range selection
         if mapping and mapping.get("kind") == "wind":
-            base_da = ecmwf_ds[mapping["u"]]
+            u_name = mapping["u"]
+            base_da = ecmwf_ds[u_name]
+            unit_str = base_da.attrs.get("units", "GRIB_units")
+            long_name = WIND_LONG_NAMES.get(var_name, f"Wind speed ({var_name})")
         else:
             if var_name not in ecmwf_ds.data_vars:
                 raise ValueError(f"ECMWF variable '{var_name}' not found in dataset")
             base_da = ecmwf_ds[var_name]
+            unit_str = base_da.attrs.get("units", "GRIB_units")
+            long_name = base_da.attrs.get("long_name", var_name)
 
         time_dim = ecmwf_meta.get("time_dim")
 
@@ -944,24 +975,74 @@ def ecmwf_config():
             end_idx = 0
             base_slice = base_da
 
-        # Compute colour-scale limits. For wind variables, this is based on
-        # the magnitude derived from u/v components.
-        if mapping and mapping.get("kind") == "wind":
-            u_all = ecmwf_ds[mapping["u"]]
-            v_all = ecmwf_ds[mapping["v"]]
-            if time_dim and time_dim in u_all.dims:
-                u_slice = u_all.isel({time_dim: slice(start_idx, end_idx + 1)})
-                v_slice = v_all.isel({time_dim: slice(start_idx, end_idx + 1)})
-            else:
-                u_slice = u_all
-                v_slice = v_all
-            speed = (u_slice ** 2 + v_slice ** 2) ** 0.5
-            v_min = float(speed.min(skipna=True).values)
-            v_max = float(speed.max(skipna=True).values)
+        # Check cache BEFORE expensive computation
+        cache_key = (var_name, _ecmwf_dataset_id, start_idx, end_idx)
+        if cache_key in _ecmwf_minmax_cache:
+            cached = _ecmwf_minmax_cache[cache_key]
+            print(f"✓ Cache HIT for {var_name} [{start_idx}:{end_idx}]")
+            v_min = cached['v_min']
+            v_max = cached['v_max']
+            unit_str = cached['units']
+            long_name = cached['long_name']
         else:
-            v_min = float(base_slice.min(skipna=True).values)
-            v_max = float(base_slice.max(skipna=True).values)
+            print(f"⚠ Cache MISS for {var_name} [{start_idx}:{end_idx}], computing...")
+            
+            if time_dim and time_dim in base_da.dims:
+                base_slice = base_da.isel({time_dim: slice(start_idx, end_idx + 1)})
+            else:
+                base_slice = base_da
 
+            # Compute colour-scale limits. For wind variables, this is based on
+            # the magnitude derived from u/v components.
+            if mapping and mapping.get("kind") == "wind":
+                u_all = ecmwf_ds[mapping["u"]]
+                v_all = ecmwf_ds[mapping["v"]]
+                if time_dim and time_dim in u_all.dims:
+                    u_slice = u_all.isel({time_dim: slice(start_idx, end_idx + 1)})
+                    v_slice = v_all.isel({time_dim: slice(start_idx, end_idx + 1)})
+                else:
+                    u_slice = u_all
+                    v_slice = v_all
+                
+                speed = (u_slice ** 2 + v_slice ** 2) ** 0.5
+                
+                # Handle Dask arrays efficiently
+                if hasattr(speed, 'chunks'):
+                    with dask.config.set(scheduler='threads'):
+                        speed_computed = speed.compute()
+                        v_min = float(speed_computed.min())
+                        v_max = float(speed_computed.max())
+                else:
+                    v_min = float(speed.min(skipna=True).values)
+                    v_max = float(speed.max(skipna=True).values)
+                
+                print(f"  Wind min/max: {v_min:.2f} to {v_max:.2f} {unit_str}")
+            else:
+                print(f"  Computing min/max for scalar {var_name}...")
+                
+                # Handle Dask arrays efficiently
+                if hasattr(base_slice, 'chunks'):
+                    import dask
+                    with dask.config.set(scheduler='threads'):
+                        computed = base_slice.compute()
+                        v_min = float(computed.min())
+                        v_max = float(computed.max())
+                else:
+                    v_min = float(base_slice.min(skipna=True).values)
+                    v_max = float(base_slice.max(skipna=True).values)
+                
+                print(f"  Min/max: {v_min:.2f} to {v_max:.2f} {unit_str}")
+            
+            # Store in cache after computation
+            _ecmwf_minmax_cache[cache_key] = {
+                'v_min': v_min,
+                'v_max': v_max,
+                'units': unit_str,
+                'long_name': long_name
+            }
+            print(f"Cached min/max for {var_name} [{start_idx}:{end_idx}]")
+
+        # Update global metadata
         ecmwf_meta["var_name"] = var_name
         ecmwf_meta["v_min"] = v_min
         ecmwf_meta["v_max"] = v_max
@@ -974,6 +1055,8 @@ def ecmwf_config():
             "range_start": start_idx,
             "range_end": end_idx,
             "frame_count": max_frame + 1,
+            'units': unit_str,        
+            'long_name': long_name
         })
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -1037,10 +1120,7 @@ def get_map_data():
             "lons": dataset["lons"],
             "stations": dataset["stations"],
             "stations_meta": dataset["station_points"],
-            "hull": dataset["hull"],
-            "fill_circles": dataset["fill_circles"],
             "time_labels": dataset["time_labels"],
-            # values are already JSON-normalised inside build_map_dataset
             "values": dataset["values"],
             "v_min": dataset["v_min"],
             "v_max": dataset["v_max"]
