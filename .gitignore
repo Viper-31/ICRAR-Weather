@@ -19,3 +19,4 @@ temp*
 **/app_config.yaml
 *deprecated*
 tmp/
+!FlaskApp/templates/
