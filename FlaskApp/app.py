@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 import xarray as xr
 import os
+import sys
 import pandas as pd
 import numpy as np
 import math
@@ -704,6 +705,66 @@ def _get_or_build_map_dataset(config: dict) -> dict:
     _dpird_map_cache[key] = dataset
     return dataset
 
+
+def _build_dpird_ui_meta():
+    """Build UI metadata for the currently loaded DPIRD dataset.
+
+    Shape matches the response from /upload and dpird_meta from /query so
+    the frontend can call populateDpirdUi() with this payload.
+    """
+    global ds
+    if ds is None:
+        return None
+
+    raw_vars = [v for v in ds.data_vars]
+    display_vars = raw_vars.copy()
+
+    if 'wind_3m_speed' in raw_vars and 'wind_3m_degN' in raw_vars:
+        display_vars.append('wind_3m')
+        if 'wind_3m_speed' in display_vars:
+            display_vars.remove('wind_3m_speed')
+        if 'wind_3m_degN' in display_vars:
+            display_vars.remove('wind_3m_degN')
+
+    if 'station' in ds.coords:
+        stations = [str(s) for s in ds.station.values]
+        stations.sort()
+    else:
+        stations = [f"Loc_{i}" for i in range(len(ds.lat.values.flatten()))]
+
+    time_vals = pd.to_datetime(ds.time.values)
+    date_range = [
+        time_vals.min().strftime('%Y-%m-%d'),
+        time_vals.max().strftime('%Y-%m-%d')
+    ]
+
+    return {
+        "variables": display_vars,
+        "stations": stations,
+        "date_range": date_range,
+    }
+
+
+def _build_ecmwf_ui_meta():
+    """Build UI metadata for the currently loaded ECMWF dataset.
+
+    Shape matches ecmwf_meta from /query and the response from
+    /ecmwf_upload so the frontend can call populateEcmwfUi().
+    """
+    global ecmwf_ds, ecmwf_meta
+    if ecmwf_ds is None or not ecmwf_meta:
+        return None
+
+    return {
+        "time_labels": ecmwf_meta["time_labels"],
+        "variables": ecmwf_meta["variables"],
+        "default_var": ecmwf_meta["var_name"],
+        "frame_count": ecmwf_meta["frame_count"],
+        "time_count": ecmwf_meta.get("time_count", 0),
+        "step_count": ecmwf_meta.get("step_count", 0),
+        "step_values": ecmwf_meta.get("step_values", []),
+    }
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     global ds, ds_wa, _dpird_dataset_id, _dpird_map_cache
@@ -744,34 +805,8 @@ def upload_file():
         # Reset DPIRD map cache whenever a new dataset is uploaded
         _dpird_dataset_id = filepath
         _dpird_map_cache = {}
-        raw_vars = [v for v in ds.data_vars]
-        
-        # Filtered list to send to UI
-        display_vars = raw_vars.copy()
-        
-        if 'wind_3m_speed' in raw_vars and 'wind_3m_degN' in raw_vars:
-            # We use 'wind_3m' as the ID but we can label it in frontend if needed
-            # For now, let's keep the ID consistent with your frontend logic
-            display_vars.append('wind_3m') 
-            
-            # Remove the individual components so they don't show in the UI
-            if 'wind_3m_speed' in display_vars: display_vars.remove('wind_3m_speed')
-            if 'wind_3m_degN' in display_vars: display_vars.remove('wind_3m_degN')
-        
-        if 'station' in ds.coords:
-            stations = [str(s) for s in ds.station.values]
-            stations.sort()
-        else:
-            stations = [f"Loc_{i}" for i in range(len(ds.lat.values.flatten()))]
-        
-        time_vals = pd.to_datetime(ds.time.values)
-        date_range = [time_vals.min().strftime('%Y-%m-%d'), time_vals.max().strftime('%Y-%m-%d')]
-
-        return jsonify({
-            "variables": display_vars,
-            "stations": stations,
-            "date_range": date_range
-        })
+        ui_meta = _build_dpird_ui_meta()
+        return jsonify(ui_meta)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -808,37 +843,7 @@ def query_datasets():
                 
                 _dpird_dataset_id = "acacia://clean_DPIRD/DPIRD_final_stations.nc"
                 _dpird_map_cache.clear()
-                
-                # Get display variables 
-                raw_vars = [v for v in ds.data_vars]
-                display_vars = raw_vars.copy()
-                
-                if 'wind_3m_speed' in raw_vars and 'wind_3m_degN' in raw_vars:
-                    display_vars.append('wind_3m')
-                    if 'wind_3m_speed' in display_vars:
-                        display_vars.remove('wind_3m_speed')
-                    if 'wind_3m_degN' in display_vars:
-                        display_vars.remove('wind_3m_degN')
-                
-                # Get stations
-                if 'station' in ds.coords:
-                    stations = [str(s) for s in ds.station.values]
-                    stations.sort()
-                else:
-                    stations = [f"Loc_{i}" for i in range(len(ds.lat.values.flatten()))]
-                
-                # Get time range
-                time_vals = pd.to_datetime(ds.time.values)
-                dpird_date_range = [
-                    time_vals.min().strftime('%Y-%m-%d'), 
-                    time_vals.max().strftime('%Y-%m-%d')
-                ]
-                
-                response['dpird_meta'] = {
-                    'variables': display_vars,
-                    'stations': stations,
-                    'date_range': dpird_date_range
-                }
+                response['dpird_meta'] = _build_dpird_ui_meta()
                 
             except Exception as e:
                 response['dpird_error'] = str(e)
@@ -866,18 +871,7 @@ def query_datasets():
                 _init_ecmwf_metadata(ecmwf_ds)
                 _ecmwf_dataset_id = f"acacia://ecmwf_op_clean/{dataset_id_suffix}"
                 
-                # Get display variables (reuse from metadata init)
-                display_vars = ecmwf_meta["variables"]
-                
-                response['ecmwf_meta'] = {
-                    'variables': display_vars,
-                    'time_labels': ecmwf_meta["time_labels"],
-                    'default_var': ecmwf_meta["var_name"],
-                    'frame_count': ecmwf_meta["frame_count"],
-                    'time_count': ecmwf_meta.get("time_count", 0),
-                    'step_count': ecmwf_meta.get("step_count", 0),
-                    'step_values': ecmwf_meta.get("step_values", []),
-                }
+                response['ecmwf_meta'] = _build_ecmwf_ui_meta()
                 
             except Exception as e:
                 response['ecmwf_error'] = str(e)
@@ -886,6 +880,27 @@ def query_datasets():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/initial_state', methods=['GET'])
+def initial_state():
+    """Return UI metadata for any datasets already loaded in memory.
+
+    This lets the frontend initialise variable lists and date ranges
+    when datasets have been preloaded on server startup (e.g. via a
+    CLI flag) without requiring the user to upload or query first.
+    """
+    payload = {}
+
+    dpird_meta = _build_dpird_ui_meta()
+    if dpird_meta is not None:
+        payload["dpird_meta"] = dpird_meta
+
+    ecmwf_ui = _build_ecmwf_ui_meta()
+    if ecmwf_ui is not None:
+        payload["ecmwf_meta"] = ecmwf_ui
+
+    return jsonify(payload)
     
 @app.route('/ecmwf_upload', methods=['POST'])
 def ecmwf_upload():
@@ -906,15 +921,8 @@ def ecmwf_upload():
             ecmwf_ds = xr.open_dataset(filepath)
         _init_ecmwf_metadata(ecmwf_ds)
 
-        return jsonify({
-            "time_labels": ecmwf_meta["time_labels"],
-            "variables": ecmwf_meta["variables"],
-            "default_var": ecmwf_meta["var_name"],
-            "frame_count": ecmwf_meta["frame_count"],
-            "time_count": ecmwf_meta.get("time_count", 0),
-            "step_count": ecmwf_meta.get("step_count", 0),
-            "step_values": ecmwf_meta.get("step_values", []),
-        })
+        ui_meta = _build_ecmwf_ui_meta()
+        return jsonify(ui_meta)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1265,5 +1273,72 @@ def get_fill_values():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
+
+def preload_default_datasets():
+    """Preload local DPIRD and ECMWF NetCDF files for testing.
+
+    When the app is started with a special CLI flag, this function
+    loads the default files into memory so the UI behaves as if the
+    user had manually uploaded them.
+    """
+    global ds, ds_wa, _dpird_dataset_id, _dpird_map_cache, ecmwf_ds, _ecmwf_dataset_id
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    dpird_path = os.path.join(base_dir, 'uploads', 'DPIRD_final_stations_utc0.nc')
+    ecmwf_path = os.path.join(base_dir, 'uploads', '02.nc')
+
+    # DPIRD preload
+    if os.path.exists(dpird_path):
+        try:
+            try:
+                ds_local = xr.open_dataset(dpird_path, chunks={"time": 4096})
+            except Exception:
+                ds_local = xr.open_dataset(dpird_path)
+
+            ds_wa_local = None
+            if "lat" in ds_local.coords and "lon" in ds_local.coords:
+                wa_lat_bounds = [-35.0, -13.0]
+                wa_lon_bounds = [115.0, 129.0]
+                lat_cond = (ds_local.lat >= wa_lat_bounds[0]) & (ds_local.lat <= wa_lat_bounds[1])
+                lon_cond = (ds_local.lon >= wa_lon_bounds[0]) & (ds_local.lon <= wa_lon_bounds[1])
+                mask = lat_cond & lon_cond
+                if hasattr(mask, 'chunks'):
+                    mask = mask.compute()
+                ds_wa_local = ds_local.where(mask, drop=True)
+                if hasattr(ds_wa_local, 'chunks'):
+                    ds_wa_local = ds_wa_local.persist()
+
+            ds = ds_local
+            ds_wa = ds_wa_local
+            _dpird_dataset_id = dpird_path
+            _dpird_map_cache = {}
+            print(f"Preloaded DPIRD dataset from {dpird_path}")
+        except Exception as exc:
+            print(f"Failed to preload DPIRD dataset from {dpird_path}: {exc}")
+    else:
+        print(f"DPIRD preload file not found at {dpird_path}")
+
+    # ECMWF preload
+    if os.path.exists(ecmwf_path):
+        try:
+            try:
+                ds_ec = xr.open_dataset(ecmwf_path, engine='h5netcdf', chunks={})
+            except Exception:
+                ds_ec = xr.open_dataset(ecmwf_path)
+            ecmwf_ds = ds_ec
+            _init_ecmwf_metadata(ecmwf_ds)
+            _ecmwf_dataset_id = ecmwf_path
+            print(f"Preloaded ECMWF dataset from {ecmwf_path}")
+        except Exception as exc:
+            print(f"Failed to preload ECMWF dataset from {ecmwf_path}: {exc}")
+    else:
+        print(f"ECMWF preload file not found at {ecmwf_path}")
+
+
 if __name__ == '__main__':
+    # If started with a special flag, preload default datasets
+    # Example: python app.py -1
+    if len(sys.argv) > 1 and sys.argv[1] == '-1':
+        preload_default_datasets()
+
     app.run(debug=True)

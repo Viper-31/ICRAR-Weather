@@ -77,16 +77,14 @@
         <div id="dpirdSidebar" class="hidden">
             <div id="configSection" class="hidden">
                 <div class="section-card">
-                    <span class="label-sm">DPIRD Configuration</span>
-                    <label class="sr-only" for="viewMode">View mode</label>
+                    <span id="dpirdConfigTitle" class="label-sm">DPIRD Configuration</span>
+                    <label id="dpirdViewModeLabel" class="sr-only" for="viewMode">View mode</label>
                     <select id="viewMode" onchange="toggleViewUI()">
                         <option value="map">🗺️ Map View</option>
                         <option value="graph">📈 Graph</option>
                     </select>
-                    <div style="display:flex; gap:5px; margin-top:5px;">
-                        <input type="date" id="startDate" aria-label="Start Date">
-                        <input type="date" id="endDate" aria-label="End Date">
-                    </div>
+                    <input type="date" id="startDate" aria-label="Start Date">
+                    <input type="date" id="endDate" aria-label="End Date">
                 </div>
 
                 <div id="timeSliderCard" class="section-card hidden">
@@ -113,7 +111,8 @@
                 
                 <div class="section-card">
                     <span class="label-sm">DPIRD Variable</span>
-                    <div id="varStack" class="var-stack"></div>
+                    <select id="dpirdVarSelect"></select>
+                    <!-- <div id="varStack" class="var-stack"></div> -->
                 </div>
                 <button id="renderBtn" onclick="runVisualization()" style="background: #0ea5e9; width:100%;" disabled>Render DPIRD</button>
             </div>
@@ -122,22 +121,20 @@
         <!-- ECMWF CONTROLS -->
         <div id="ecmwfSidebar" class="hidden">
             <div id="ecmwfConfigCard" class="section-card hidden">
-                <span class="label-sm">ECMWF Configuration</span>
-                <label class="label-sm" style="margin-top:6px;" for="ecmwfVarSelect">Variable</label>
+                <span id="ecmwfConfigTitle" class="label-sm">ECMWF Configuration</span>
+                <label id="ecmwfVarLabel" class="label-sm" style="margin-top:6px;" for="ecmwfVarSelect">Variable</label>
                 <select id="ecmwfVarSelect"></select>
-                <label class="label-sm" style="margin-top:6px;">Date Range</label>
+                <label id="ecmwfDateRangeLabel" class="label-sm" style="margin-top:6px;">Date Range</label>
                 <select id="ecmwfStartSelect"></select>
                 <select id="ecmwfEndSelect"></select>
             </div>
 
             <div id="ecmwfTimeCard" class="section-card hidden">
-                <span class="label-sm">Forecast Reference Time</span>
+                <span class="label-sm">ECMWF Forecast Reference Time</span>
                 <input type="range" id="ecmwfTimeSlider" min="0" value="0" aria-label="ECMWF forecast time index">
                 <div id="ecmwfTimeLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">T[0]</div>
-            </div>
 
-            <div id="ecmwfStepCard" class="section-card hidden">
-                <span class="label-sm">Step (+hours)</span>
+                <span class="label-sm" style="margin-top:8px; display:block;">Step (+hours)</span>
                 <input type="range" id="ecmwfStepSlider" min="0" value="0" aria-label="ECMWF forecast lead time in hours">
                 <div id="ecmwfStepLabel" style="font-size: 11px; text-align: center; margin-top: 5px; font-weight: bold;">+0 h</div>
             </div>

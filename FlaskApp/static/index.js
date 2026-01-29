@@ -101,7 +101,10 @@ function validateDpirdConfig() {
     const startVal = startInput ? startInput.value : '';
     const endVal = endInput ? endInput.value : '';
     const stationVal = stationSelect ? stationSelect.value : '';
-    const varSelected = !!document.querySelector('input[name="vItem"]:checked');
+    const dpirdVarSelect = document.getElementById('dpirdVarSelect');
+    const varSelected = dpirdVarSelect
+        ? !!dpirdVarSelect.value
+        : !!document.querySelector('input[name="vItem"]:checked');
 
     let dateValid = !!startVal && !!endVal;
     if (dateValid && startVal > endVal) {
@@ -336,7 +339,10 @@ function updateContextSwitcher() {
 function shouldUseSharedColorbar() {
     if (appMode !== 'dual') return false;
     
-    const dpirdVar = document.querySelector('input[name="vItem"]:checked')?.value;
+    const dpirdVarSelect = document.getElementById('dpirdVarSelect');
+    const dpirdVar = (dpirdVarSelect && dpirdVarSelect.value)
+        ? dpirdVarSelect.value
+        : document.querySelector('input[name="vItem"]:checked')?.value;
     const ecmwfVar = ecmwfState.currentVar;
     
     if (!dpirdVar || !ecmwfVar) return false;
@@ -548,6 +554,18 @@ function switchViewContext(mode) {
     const ecmwfRenderBtn = document.getElementById('ecmwfRenderBtn');
     const dualRenderBtn = document.getElementById('dualRenderBtn');
 
+    // Titles and labels we may tweak for dual layout
+    const dpirdConfigTitle = document.getElementById('dpirdConfigTitle');
+    const dpirdViewModeLabel = document.getElementById('dpirdViewModeLabel');
+    const viewModeSelect = document.getElementById('viewMode');
+    const ecmwfConfigTitle = document.getElementById('ecmwfConfigTitle');
+    const ecmwfConfigCard = document.getElementById('ecmwfConfigCard');
+    const ecmwfVarLabel = document.getElementById('ecmwfVarLabel');
+    const ecmwfDateRangeLabel = document.getElementById('ecmwfDateRangeLabel');
+    const ecmwfStartSelect = document.getElementById('ecmwfStartSelect');
+    const ecmwfEndSelect = document.getElementById('ecmwfEndSelect');
+    const ecmwfTimeCard = document.getElementById('ecmwfTimeCard');
+
     // Check if elements exist before manipulating
     console.log('switchViewContext called:', mode);
     console.log('dpirdSidebar exists:', !!dpirdSidebar);
@@ -566,8 +584,57 @@ function switchViewContext(mode) {
     if (dpirdRenderBtn) dpirdRenderBtn.style.display = 'none';
     if (ecmwfRenderBtn) ecmwfRenderBtn.style.display = 'none';
     if (dualRenderBtn) dualRenderBtn.style.display = 'none';
+
+    // Reset any text/visibility tweaks from dual mode
+    if (dpirdConfigTitle) dpirdConfigTitle.textContent = 'DPIRD Configuration';
+    if (dpirdViewModeLabel) dpirdViewModeLabel.classList.remove('hidden');
+    if (viewModeSelect) viewModeSelect.classList.remove('hidden');
+    const stationSelector = document.getElementById('stationSelector');
+    const windComponentSelector = document.getElementById('windComponentSelector');
+    if (stationSelector) stationSelector.classList.add('hidden');
+    if (windComponentSelector) windComponentSelector.classList.add('hidden');
+    if (ecmwfConfigTitle) ecmwfConfigTitle.textContent = 'ECMWF Configuration';
+    if (ecmwfVarLabel) ecmwfVarLabel.textContent = 'Variable';
+    if (ecmwfDateRangeLabel) ecmwfDateRangeLabel.textContent = 'Date Range';
+    if (ecmwfDateRangeLabel) ecmwfDateRangeLabel.classList.remove('hidden');
+    if (ecmwfStartSelect) ecmwfStartSelect.classList.remove('hidden');
+    if (ecmwfEndSelect) ecmwfEndSelect.classList.remove('hidden');
+
+    // Ensure ECMWF time/step card is restored to ECMWF sidebar
+    if (ecmwfSidebar && ecmwfTimeCard && ecmwfTimeCard.parentElement !== ecmwfSidebar) {
+        const ecmwfViewModeCard = document.getElementById('ecmwfViewModeCard');
+        if (ecmwfViewModeCard && ecmwfViewModeCard.parentElement === ecmwfSidebar) {
+            ecmwfSidebar.insertBefore(ecmwfTimeCard, ecmwfViewModeCard);
+        } else if (ecmwfRenderBtn && ecmwfRenderBtn.parentElement === ecmwfSidebar) {
+            ecmwfSidebar.insertBefore(ecmwfTimeCard, ecmwfRenderBtn);
+        } else {
+            ecmwfSidebar.appendChild(ecmwfTimeCard);
+        }
+    }
+    // Ensure ECMWF config card is restored to ECMWF sidebar
+    if (ecmwfSidebar && ecmwfConfigCard && ecmwfConfigCard.parentElement !== ecmwfSidebar) {
+        const firstChild = ecmwfSidebar.firstChild;
+        if (firstChild) {
+            ecmwfSidebar.insertBefore(ecmwfConfigCard, firstChild);
+        } else {
+            ecmwfSidebar.appendChild(ecmwfConfigCard);
+        }
+    }
     
     if (mode === 'dpird') {
+        // Ensure DPIRD timeline card sits directly under the DPIRD config card,
+        // above station selector / variable / render button.
+        const configSection = document.getElementById('configSection');
+        const timeSliderCard = document.getElementById('timeSliderCard');
+        if (configSection && timeSliderCard) {
+            const dpirdConfigCard = dpirdConfigTitle ? dpirdConfigTitle.closest('.section-card') : null;
+            if (dpirdConfigCard && dpirdConfigCard.parentElement === configSection) {
+                dpirdConfigCard.insertAdjacentElement('afterend', timeSliderCard);
+            } else {
+                configSection.insertBefore(timeSliderCard, configSection.firstChild);
+            }
+        }
+
         if (dpirdSidebar) dpirdSidebar.classList.remove('hidden');
         if (dpirdColorbar) dpirdColorbar.classList.remove('hidden');
         if (dpirdColorbarHeader) dpirdColorbarHeader.textContent = 'DPIRD';
@@ -584,6 +651,55 @@ function switchViewContext(mode) {
         if (ecmwfSidebar) ecmwfSidebar.classList.remove('hidden');
         if (dualSidebar) dualSidebar.classList.remove('hidden');
         if (dualRenderBtn) dualRenderBtn.style.display = 'block';
+
+        // In dual mode, unify the layout visually:
+        // - Use DPIRD block as shared date configuration
+        // - Hide DPIRD-specific view mode controls (map/graph)
+        // - Emphasise DPIRD/ECMWF variable labels
+        if (dpirdConfigTitle) dpirdConfigTitle.textContent = 'Date Configuration';
+        if (dpirdViewModeLabel) dpirdViewModeLabel.classList.add('hidden');
+        if (viewModeSelect) {
+            viewModeSelect.classList.add('hidden');
+            // Force map view in dual mode
+            viewModeSelect.value = 'map';
+        }
+        if (stationSelector) stationSelector.classList.add('hidden');
+        if (windComponentSelector) windComponentSelector.classList.add('hidden');
+
+        if (ecmwfConfigTitle) ecmwfConfigTitle.classList.add('hidden');
+        if (ecmwfVarLabel) ecmwfVarLabel.textContent = 'ECMWF Variable';
+        // Hide ECMWF date range controls in dual mode so the
+        // top-level DPIRD date inputs act as the shared range.
+        if (ecmwfDateRangeLabel) ecmwfDateRangeLabel.classList.add('hidden');
+        if (ecmwfStartSelect) ecmwfStartSelect.classList.add('hidden');
+        if (ecmwfEndSelect) ecmwfEndSelect.classList.add('hidden');
+
+        // In dual mode, reorder cards to create a unified stack:
+        // - group DPIRD and ECMWF variable cards together
+        // - move DPIRD timeline and ECMWF time/step into the same
+        //   DPIRD config section so they appear together.
+        const configSection = document.getElementById('configSection');
+        const timeSliderCard = document.getElementById('timeSliderCard');
+        if (configSection) {
+            // Group variable cards: place ECMWF config card directly after DPIRD variable card
+            const dpirdVarSelect = document.getElementById('dpirdVarSelect');
+            const dpirdVarCard = dpirdVarSelect ? dpirdVarSelect.closest('.section-card') : null;
+            if (ecmwfConfigCard) {
+                if (dpirdVarCard && dpirdVarCard.parentElement === configSection) {
+                    dpirdVarCard.insertAdjacentElement('afterend', ecmwfConfigCard);
+                } else {
+                    configSection.appendChild(ecmwfConfigCard);
+                }
+            }
+
+            // Keep timeline and ECMWF time/step controls within the shared config stack
+            if (timeSliderCard) {
+                configSection.appendChild(timeSliderCard);
+            }
+            if (ecmwfTimeCard) {
+                configSection.appendChild(ecmwfTimeCard);
+            }
+        }
 
         // Update colorbar visibility 
         if (shouldUseSharedColorbar()) {
@@ -765,7 +881,10 @@ async function runDualVisualization() {
         return;
     }
     
-    const dpirdVar = document.querySelector('input[name="vItem"]:checked')?.value;
+    const dpirdVarSelect = document.getElementById('dpirdVarSelect');
+    const dpirdVar = (dpirdVarSelect && dpirdVarSelect.value)
+        ? dpirdVarSelect.value
+        : document.querySelector('input[name="vItem"]:checked')?.value;
     if (!dpirdVar) {
         alert('Please select a DPIRD variable first.');
         return;
@@ -847,6 +966,11 @@ async function runDualVisualization() {
         if (dpirdVar && typeof renderMap === 'function') {
             await renderMap(dpirdVar);
         }
+        // Ensure ECMWF time/step controls are visible after dual render
+        const ecmwfTimeCard = document.getElementById('ecmwfTimeCard');
+        if (ecmwfTimeCard) {
+            ecmwfTimeCard.classList.remove('hidden');
+        }
         
         // Update colorbar visibility
         updateColorbarVisibility();
@@ -854,6 +978,32 @@ async function runDualVisualization() {
         if (rightUi) rightUi.style.display = 'flex';   
                
         setLoading(false, 'Dual layer visualization ready.');
+
+        console.log('Dual visualization rendered successfully.');
+
+        // Derive human-readable times for logging
+        let ecmwfTimeString = '';
+        if (typeof formatEcmwfValidTime === 'function') {
+            ecmwfTimeString = formatEcmwfValidTime(tIdx, sIdx);
+        } else if (Array.isArray(ecmwfState.timeLabels) && ecmwfState.timeLabels.length) {
+            const base = ecmwfState.timeLabels[Math.max(0, Math.min(tIdx, ecmwfState.timeLabels.length - 1))];
+            const step = Array.isArray(ecmwfState.stepValues) && ecmwfState.stepValues.length
+                ? ecmwfState.stepValues[Math.max(0, Math.min(sIdx, ecmwfState.stepValues.length - 1))]
+                : 0;
+            ecmwfTimeString = `${base} (+${step}h)`;
+        } else {
+            ecmwfTimeString = `t${tIdx} +${sIdx}h`;
+        }
+
+        const dpirdTimeLabelEl = document.getElementById('timeLabel');
+        const dpirdTimeString = dpirdTimeLabelEl && dpirdTimeLabelEl.innerText
+            ? dpirdTimeLabelEl.innerText
+            : `index ${playback.currentIdx || 0}`;
+
+        console.log('ECMWF variable:', ecmwfState.currentVar, 'Valid time:', ecmwfTimeString);
+        console.log('DPIRD variable:', dpirdVar, 'Time:', dpirdTimeString);
+
+
     } catch (err) {
         console.error('Dual visualization error:', err);
         setLoading(false, `Error: ${err.message}`);
@@ -1017,16 +1167,45 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     updateAcaciaDateUI();
-    // Listener for DPIRD variable changes to update colorbar visibility
-    const varStack = document.getElementById('varStack');
-    if (varStack) {
-        varStack.addEventListener('change', () => {
+    
+    // Attempt to initialise UI from any datasets that were
+    // preloaded on the server (e.g. via CLI flag).
+    fetch('/initial_state')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+            if (!data) return;
+
+            if (data.dpird_meta && window.populateDpirdUi) {
+                loadedDatasets.dpird = true;
+                window.populateDpirdUi(data.dpird_meta);
+            }
+
+            if (data.ecmwf_meta && window.populateEcmwfUi) {
+                loadedDatasets.ecmwf = true;
+                window.populateEcmwfUi(data.ecmwf_meta);
+            }
+
+            if (data.dpird_meta || data.ecmwf_meta) {
+                setLoading(false, 'Preloaded datasets ready. Configure and render.');
+            }
+
+            updateContextSwitcher();
+        })
+        .catch(() => {
+            // Preload is optional; ignore errors here.
+        });
+    
+    const dpirdVarSelect = document.getElementById('dpirdVarSelect');
+    if (dpirdVarSelect) {
+        dpirdVarSelect.addEventListener('change', () => {
+            // Revalidate DPIRD config and dependent UI when variable changes
+            validateDpirdConfig();
+            updateVariableDependentUI();
             if (appMode === 'dual') {
                 updateColorbarVisibility();
             }
         });
     }
-    
     // Add listener for ECMWF variable changes to update colorbar visibility
     const ecmwfVarSelect = document.getElementById('ecmwfVarSelect');
     if (ecmwfVarSelect) {

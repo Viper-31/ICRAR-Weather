@@ -13,11 +13,20 @@
 window.populateDpirdUi = function(data) {
     if (!data) return;
     
+    const variables = Array.isArray(data.variables) ? data.variables : (data.variables || []);
+
+    // Legacy radio-stack support (if varStack still exists)
     const varStack = document.getElementById('varStack');
     if (varStack) {
-        varStack.innerHTML = (data.variables || []).map(v => `
+        varStack.innerHTML = variables.map(v => `
             <label class="var-row"><input type="radio" name="vItem" value="${v}"> ${v}</label>`
         ).join('');
+    }
+
+    // New DPIRD variable dropdown
+    const varSelect = document.getElementById('dpirdVarSelect');
+    if (varSelect) {
+        varSelect.innerHTML = variables.map(v => `<option value="${v}">${v}</option>`).join('');
     }
 
     const stationDropdown = document.getElementById('stationDropdown');
@@ -317,7 +326,10 @@ async function runVisualization() {
         return;
     }
     const mode = document.getElementById('viewMode').value;
-    const varName = document.querySelector('input[name="vItem"]:checked')?.value;
+    const varSelect = document.getElementById('dpirdVarSelect');
+    const varName = (varSelect && varSelect.value)
+        ? varSelect.value
+        : document.querySelector('input[name="vItem"]:checked')?.value;
     if (!varName) return alert('Select a variable!');
     let datasetVar = varName;
     let displayLabel = varName;

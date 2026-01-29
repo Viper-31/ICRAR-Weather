@@ -358,6 +358,11 @@ async function runEcmwfVisualization() {
             await requestEcmwfContours(tIdx, sIdx);
         }
     }
+
+    // Reveal the ECMWF time/step controls only after a render
+    const timeCard = document.getElementById('ecmwfTimeCard');
+    if (timeCard) timeCard.classList.remove('hidden');
+
     setLoading(false, '');
 }
 
@@ -809,7 +814,7 @@ async function requestEcmwfContours(timeIndex, stepIndex) {
                         pct = clamp01((v - vMin) / range);
                     }
                     const size = 0.5 + (pct * 1.5);
-                    console.log('Creating wind arrow:', v, pct, size, angle);
+                    // console.log('Creating wind arrow:', v, pct, size, angle);
                     const html = `<div class="rotator" style="--rot:${angle}deg; --size:${size}; color:${color};">
                         <svg class="arrow-svg" viewBox="0 0 24 24">
                             <g class="arrow-group" style="stroke:${color};">
@@ -872,7 +877,6 @@ function setupEcmwfMap(meta, restore) {
     const timeCard = document.getElementById('ecmwfTimeCard');
     const timeSlider = document.getElementById('ecmwfTimeSlider');
     const timeLabelEl = document.getElementById('ecmwfTimeLabel');
-    const stepCard = document.getElementById('ecmwfStepCard');
     const stepSlider = document.getElementById('ecmwfStepSlider');
     const stepLabelEl = document.getElementById('ecmwfStepLabel');
 
@@ -889,7 +893,12 @@ function setupEcmwfMap(meta, restore) {
         timeSlider.value = String(safeT);
         const lbl = timeLabels[safeT] || `T[${safeT}]`;
         timeLabelEl.innerText = lbl;
-        timeCard.classList.remove('hidden');
+
+        // Keep the card hidden until the user triggers a render.
+        // On restored maps, respect the existing visibility state.
+        if (!restore) {
+            timeCard.classList.add('hidden');
+        }
 
         timeSlider.oninput = (e) => {
             const idx = parseInt(e.target.value, 10);
@@ -909,7 +918,7 @@ function setupEcmwfMap(meta, restore) {
         };
     }
 
-    if (stepCard && stepSlider && stepLabelEl) {
+    if (stepSlider && stepLabelEl) {
         const maxStep = Math.max(0, (Array.isArray(ecmwfState.stepValues) ? ecmwfState.stepValues.length : 0) - 1);
         stepSlider.min = '0';
         stepSlider.max = String(maxStep);
@@ -920,7 +929,6 @@ function setupEcmwfMap(meta, restore) {
             ? ecmwfState.stepValues[safeS]
             : 0;
         stepLabelEl.innerText = `+${stepVal} h`;
-        stepCard.classList.remove('hidden');
 
         stepSlider.oninput = (e) => {
             const idx = parseInt(e.target.value, 10);
