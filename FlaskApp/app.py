@@ -1037,8 +1037,8 @@ def ecmwf_config():
                 if hasattr(speed, 'chunks'):
                     with dask.config.set(scheduler='threads'):
                         speed_computed = speed.compute()
-                        v_min = float(speed_computed.min())
-                        v_max = float(speed_computed.max())
+                        v_min = float(np.nanmin(speed_computed.values))
+                        v_max = float(np.nanmax(speed_computed.values))
                 else:
                     v_min = float(speed.min(skipna=True).values)
                     v_max = float(speed.max(skipna=True).values)
