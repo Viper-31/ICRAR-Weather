@@ -1,5 +1,7 @@
 let appMode = 'none'; // changed default
 const loadedDatasets = { dpird: false, ecmwf: false }; 
+let dpirdUiMeta = null;
+let ecmwfUiMeta = null;
 const dpirdViewState = {
     mode: null,          // 'map' or 'graph'
     varName: null,       // DPIRD logical variable (e.g. 'airTemperature' or 'wind_3m')
@@ -49,6 +51,153 @@ const DPIRD_ECMWF_VAR_MAP = {
 };
 
 let configListenersAttached = false;
+
+// --- Shared date range selection (DPIRD + ECMWF) ---
+function computeDpirdDateRangeFromMeta(meta) {
+    if (!meta || !Array.isArray(meta.date_range) || meta.date_range.length !== 2) return null;
+    const [startStr, endStr] = meta.date_range;
+    if (!startStr || !endStr) return null;
+    const start = new Date(`${startStr}T00:00:00Z`);
+    const end = new Date(`${endStr}T00:00:00Z`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    const rangeStart = start <= end ? start : end;
+    const rangeEnd = end >= start ? end : start;
+    return { start: rangeStart, end: rangeEnd };
+}
+
+function computeEcmwfDateRangeFromMeta(meta) {
+    if (!meta || !Array.isArray(meta.time_labels) || meta.time_labels.length === 0) return null;
+    const first = meta.time_labels[0];
+    const last = meta.time_labels[meta.time_labels.length - 1];
+    if (typeof first !== 'string' || typeof last !== 'string') return null;
+
+    function parseLabel(label) {
+        const parts = label.trim().split(/\s+/);
+        if (parts.length < 2) return null;
+        const iso = `${parts[0]}T${parts[1]}:00Z`;
+        const d = new Date(iso);
+        return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    const start = parseLabel(first);
+    const end = parseLabel(last);
+    if (!start || !end) return null;
+    const rangeStart = start <= end ? start : end;
+    const rangeEnd = end >= start ? end : start;
+    return { start: rangeStart, end: rangeEnd };
+}
+
+function maybeUpdateSharedDateRange() {
+    // Only adjust when both datasets are loaded
+    if (!loadedDatasets.dpird || !loadedDatasets.ecmwf) return;
+
+    const dpRange = computeDpirdDateRangeFromMeta(dpirdUiMeta);
+    const ecRange = computeEcmwfDateRangeFromMeta(ecmwfUiMeta);
+    if (!dpRange && !ecRange) return;
+
+    const startInput = document.getElementById('startDate');
+    const endInput = document.getElementById('endDate');
+    if (!startInput || !endInput) return;
+
+    let chosen = null;
+    if (dpRange && ecRange) {
+        const dpSpan = Math.max(0, dpRange.end.getTime() - dpRange.start.getTime());
+        const ecSpan = Math.max(0, ecRange.end.getTime() - ecRange.start.getTime());
+        chosen = dpSpan <= ecSpan ? dpRange : ecRange;
+    } else if (dpRange) {
+        chosen = dpRange;
+    } else {
+        chosen = ecRange;
+    }
+
+    if (!chosen) return;
+    const startIso = chosen.start.toISOString().slice(0, 10);
+    const endIso = chosen.end.toISOString().slice(0, 10);
+    startInput.value = startIso;
+    endInput.value = endIso;
+
+    if (typeof validateDpirdConfig === 'function') {
+        validateDpirdConfig();
+    }
+}
+
+// When in dual mode, keep ECMWF frame range in sync with
+// the shared DPIRD date configuration by adjusting the
+// ECMWF date-group selectors based on start/end dates.
+function syncEcmwfToDpirdDates() {
+    if (appMode !== 'dual' || !loadedDatasets.ecmwf) return;
+
+    const startInput = document.getElementById('startDate');
+    const endInput = document.getElementById('endDate');
+    const startVal = startInput ? startInput.value : '';
+    const endVal = endInput ? endInput.value : '';
+    if (!startVal || !endVal) return;
+
+    let start = new Date(`${startVal}T00:00:00Z`);
+    let end = new Date(`${endVal}T00:00:00Z`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
+    if (end < start) {
+        const tmp = start;
+        start = end;
+        end = tmp;
+    }
+
+    const dateLabels = Array.isArray(ecmwfState.dateLabels) ? ecmwfState.dateLabels : [];
+    if (!dateLabels.length) return;
+
+    const startSel = document.getElementById('ecmwfStartSelect');
+    const endSel = document.getElementById('ecmwfEndSelect');
+    if (!startSel || !endSel) return;
+
+    const parseDay = (dStr) => {
+        const d = new Date(`${dStr}T00:00:00Z`);
+        return Number.isNaN(d.getTime()) ? null : d;
+    };
+
+    let startGroup = 0;
+    let endGroup = dateLabels.length - 1;
+
+    for (let i = 0; i < dateLabels.length; i++) {
+        const d = parseDay(dateLabels[i]);
+        if (!d) continue;
+        if (d >= start) {
+            startGroup = i;
+            break;
+        }
+    }
+
+    for (let i = 0; i < dateLabels.length; i++) {
+        const d = parseDay(dateLabels[i]);
+        if (!d) continue;
+        if (d <= end) {
+            endGroup = i;
+        } else {
+            break;
+        }
+    }
+
+    if (endGroup < startGroup) {
+        endGroup = startGroup;
+    }
+
+    startSel.value = String(startGroup);
+    endSel.value = String(endGroup);
+
+    if (typeof updateEcmwfConfigFromUi === 'function') {
+        updateEcmwfConfigFromUi();
+    }
+}
+
+// Called by DPIRD/ECMWF UI populators when metadata is ready
+window.registerDpirdUiMeta = function(meta) {
+    dpirdUiMeta = meta;
+    maybeUpdateSharedDateRange();
+};
+
+window.registerEcmwfUiMeta = function(meta) {
+    ecmwfUiMeta = meta;
+    maybeUpdateSharedDateRange();
+};
 
 function setLoading(isLoading, message) {
     const spinner = document.getElementById('spinner');
@@ -452,11 +601,20 @@ function attachConfigChangeHandlers() {
     const viewMode = document.getElementById('viewMode');
     
     if (startInput) {
-        startInput.addEventListener('change', validateDpirdConfig);
-        startInput.addEventListener('blur', validateDpirdConfig);
+        const handler = () => {
+            validateDpirdConfig();
+            if (appMode === 'dual') {
+                syncEcmwfToDpirdDates();
+            }
+        };
+        startInput.addEventListener('change', handler);
+        startInput.addEventListener('blur', handler);
         startInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 validateDpirdConfig();
+                if (appMode === 'dual') {
+                    syncEcmwfToDpirdDates();
+                }
                 const btn = document.getElementById('renderBtn');
                 if (btn && !btn.disabled) runVisualization();
             }
@@ -464,11 +622,20 @@ function attachConfigChangeHandlers() {
     }
     
     if (endInput) {
-        endInput.addEventListener('change', validateDpirdConfig);
-        endInput.addEventListener('blur', validateDpirdConfig);
+        const handler = () => {
+            validateDpirdConfig();
+            if (appMode === 'dual') {
+                syncEcmwfToDpirdDates();
+            }
+        };
+        endInput.addEventListener('change', handler);
+        endInput.addEventListener('blur', handler);
         endInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 validateDpirdConfig();
+                if (appMode === 'dual') {
+                    syncEcmwfToDpirdDates();
+                }
                 const btn = document.getElementById('renderBtn');
                 if (btn && !btn.disabled) runVisualization();
             }
@@ -872,16 +1039,7 @@ async function runDualVisualization() {
             await updateEcmwfConfigFromUi();
         }
         // Wind variable special handling
-        const contourToggle = document.getElementById('ecmwfContourToggle');
-        const viewModeCard = document.getElementById('ecmwfViewModeCard');
         const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
-
-         if (viewModeCard) {
-            viewModeCard.style.display = isWindVar ? 'none' : '';
-        }
-        if (contourToggle && isWindVar) {
-            contourToggle.checked = false;
-        }
 
         const timeSlider = document.getElementById('ecmwfTimeSlider');
         const stepSlider = document.getElementById('ecmwfStepSlider');
@@ -897,9 +1055,7 @@ async function runDualVisualization() {
             }
         }
         
-        // Render ECMWF layer (wind → arrows, scalar → check toggle)
-        const useContours = contourToggle ? !!contourToggle.checked : false;
-        
+        // Render ECMWF layer (wind → arrows, scalar → always contours)
         if (isWindVar) {
             ecmwfState.useContours = false;
             
@@ -911,20 +1067,10 @@ async function runDualVisualization() {
                 await requestEcmwfContours(tIdx, sIdx);
             }
         } else {
-            ecmwfState.useContours = useContours;
-            
-            if (useContours) {
-                if (typeof renderEcmwfContourPlot === 'function') {
-                    await renderEcmwfContourPlot(tIdx, sIdx, ecmwfOpacity);
-                }
-            } else {
-                if (ecmwfState.heatLayer && leafletMap && leafletMap.hasLayer(ecmwfState.heatLayer)) {
-                    leafletMap.removeLayer(ecmwfState.heatLayer);
-                }
-                
-                if (typeof requestEcmwfContours === 'function') {
-                    await requestEcmwfContours(tIdx, sIdx);
-                }
+            // Scalar ECMWF variables: always render contour/heatmap (no dots)
+            ecmwfState.useContours = true;
+            if (typeof renderEcmwfContourPlot === 'function') {
+                await renderEcmwfContourPlot(tIdx, sIdx, ecmwfOpacity);
             }
         }
         
@@ -1098,6 +1244,42 @@ function startPlayback() {
         }
         playback.slider.value = nextIndex;
         playback.updateMarkers(nextIndex);
+
+        // In dual mode, keep ECMWF aligned at 1h steps while
+        // DPIRD advances in 15-minute steps. Every 4th DPIRD
+        // frame (0,1,2,3 → then 4) we bump the ECMWF step.
+        if (appMode === 'dual' && loadedDatasets && loadedDatasets.ecmwf && (nextIndex % 4 === 0)) {
+            const stepSlider = document.getElementById('ecmwfStepSlider');
+            const stepLabelEl = document.getElementById('ecmwfStepLabel');
+            if (stepSlider && typeof ecmwfState !== 'undefined' && ecmwfState.timeLabels.length) {
+                const maxStep = parseInt(stepSlider.max || '0', 10) || 0;
+                let currentStep = parseInt(stepSlider.value || '0', 10);
+                if (!Number.isFinite(currentStep)) currentStep = 0;
+                let nextStep = currentStep + 1;
+                if (nextStep > maxStep) nextStep = maxStep;
+                stepSlider.value = String(nextStep);
+
+                // Update the visible "+X h" label to match the new step
+                let stepVal = 0;
+                if (Array.isArray(ecmwfState.stepValues) && nextStep < ecmwfState.stepValues.length) {
+                    const raw = ecmwfState.stepValues[nextStep];
+                    stepVal = typeof raw === 'number' ? raw : 0;
+                }
+                if (stepLabelEl) {
+                    stepLabelEl.innerText = `+${stepVal} h`;
+                }
+
+                const tIdx = (typeof ecmwfState.timeIndex === 'number') ? ecmwfState.timeIndex : 0;
+                const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
+                if (typeof requestEcmwfContours === 'function' && typeof renderEcmwfContourPlot === 'function') {
+                    if (isWindVar) {
+                        requestEcmwfContours(tIdx, nextStep);
+                    } else {
+                        renderEcmwfContourPlot(tIdx, nextStep);
+                    }
+                }
+            }
+        }
     }, PLAYBACK_DELAY_MS);
 }
 
