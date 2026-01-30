@@ -10,10 +10,10 @@
 
 // DPIRD variable to colormap mapping
 const DPIRD_VAR_CMAPS = {
-    airTemperature: 'coolwarm',
-    apparentAirTemperature: 'coolwarm',
-    dewPoint: 'coolwarm',
-    wetBulb: 'coolwarm',
+    airTemperature: 'thermal',
+    apparentAirTemperature: 'thermal',
+    dewPoint: 'thermal',
+    wetBulb: 'thermal',
     deltaT: 'RdBu_r',
     relativeHumidity: 'Blues',
     panEvaporation: 'YlGnBu',
@@ -32,6 +32,19 @@ const CMAP_DEFS = {
             { pos: 0.0, color: [59, 76, 192] },
             { pos: 0.5, color: [188, 184, 183] },
             { pos: 1.0, color: [180, 4, 38] }
+        ]
+    },
+    thermal: {
+        gradient: 'linear-gradient(to top, #2166ac, #4393c3, #92c5de, #d1e5f0, #fddbc7, #f4a582, #d6604d, #b2182b)',
+        stops: [
+            { pos: 0.00, color: [33, 102, 172] },    
+            { pos: 0.14, color: [67, 147, 195] },    
+            { pos: 0.29, color: [146, 197, 222] },   
+            { pos: 0.43, color: [209, 229, 240] },   
+            { pos: 0.57, color: [253, 219, 199] },   
+            { pos: 0.71, color: [244, 165, 130] },   
+            { pos: 0.86, color: [214, 96, 77] },    
+            { pos: 1.00, color: [178, 24, 43] }     
         ]
     },
     plasma: {
