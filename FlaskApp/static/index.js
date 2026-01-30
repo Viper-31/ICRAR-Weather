@@ -1033,7 +1033,7 @@ async function runDualVisualization() {
     try {
         // Get ECMWF opacity from slider
         const opacitySlider = document.getElementById('ecmwfOpacitySlider');
-        const ecmwfOpacity = opacitySlider ? parseInt(opacitySlider.value, 10) / 100 : 0.75;
+
         
         if (typeof updateEcmwfConfigFromUi === 'function') {
             await updateEcmwfConfigFromUi();
@@ -1064,13 +1064,13 @@ async function runDualVisualization() {
             }
             
             if (typeof requestEcmwfContours === 'function') {
-                await requestEcmwfContours(tIdx, sIdx);
+                await requestEcmwfContours(tIdx, sIdx, opacitySlider.value / 100);
             }
         } else {
             // Scalar ECMWF variables: always render contour/heatmap (no dots)
             ecmwfState.useContours = true;
             if (typeof renderEcmwfContourPlot === 'function') {
-                await renderEcmwfContourPlot(tIdx, sIdx, ecmwfOpacity);
+                await renderEcmwfContourPlot(tIdx, sIdx, opacitySlider.value / 100);
             }
         }
         
@@ -1271,11 +1271,13 @@ function startPlayback() {
 
                 const tIdx = (typeof ecmwfState.timeIndex === 'number') ? ecmwfState.timeIndex : 0;
                 const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
+                opacitySlider = document.getElementById('ecmwfOpacitySlider');
+
                 if (typeof requestEcmwfContours === 'function' && typeof renderEcmwfContourPlot === 'function') {
                     if (isWindVar) {
-                        requestEcmwfContours(tIdx, nextStep);
+                        requestEcmwfContours(tIdx, nextStep, opacitySlider.value / 100);
                     } else {
-                        renderEcmwfContourPlot(tIdx, nextStep);
+                        renderEcmwfContourPlot(tIdx, nextStep, opacitySlider.value / 100);
                     }
                 }
             }

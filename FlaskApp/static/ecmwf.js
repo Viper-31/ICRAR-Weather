@@ -321,7 +321,7 @@ async function runEcmwfVisualization() {
     // Wind variables are always shown as arrows on data points (no contour heatmap)
 
     const opacitySlider = document.getElementById('ecmwfOpacitySlider');
-    const opacity = opacitySlider ? parseFloat(opacitySlider.value, 10)/100 : 1.0;
+
     if (isWindVar) {
         ecmwfState.useContours = false;
         if (!leafletMap && ecmwfState.timeLabels.length) {
@@ -330,14 +330,14 @@ async function runEcmwfVisualization() {
         if (ecmwfState.heatLayer && leafletMap && leafletMap.hasLayer(ecmwfState.heatLayer)) {
             leafletMap.removeLayer(ecmwfState.heatLayer);
         }
-        await requestEcmwfContours(tIdx, sIdx);
+        await requestEcmwfContours(tIdx, sIdx, opacitySlider.value / 100);
     } else {
         // For scalar variables, always render contours/heatmap (no toggle).
         ecmwfState.useContours = true;
         if (!leafletMap && ecmwfState.timeLabels.length) {
             setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
         }
-        await renderEcmwfContourPlot(tIdx, sIdx, opacity);
+        await renderEcmwfContourPlot(tIdx, sIdx, opacitySlider.value / 100);
     }
 
     // Reveal the ECMWF time/step controls only after a render
@@ -347,7 +347,7 @@ async function runEcmwfVisualization() {
     setLoading(false, '');
 }
 
-async function renderEcmwfContourPlot(timeIndex, stepIndex, opacity = 1.0) {
+async function renderEcmwfContourPlot(timeIndex, stepIndex, opacity) {
     const statusText = document.getElementById('status-text');
     try {
         const body = {
@@ -435,7 +435,6 @@ async function renderEcmwfContourPlot(timeIndex, stepIndex, opacity = 1.0) {
             }
         }
         
-        if (!leafletMap) return;
 
         if (ecmwfState.layer && leafletMap.hasLayer(ecmwfState.layer)) {
             leafletMap.removeLayer(ecmwfState.layer);
@@ -461,7 +460,7 @@ async function renderEcmwfContourPlot(timeIndex, stepIndex, opacity = 1.0) {
         const cmap = ecmwfState.cmapName || getEcmwfCmapName(ecmwfState.currentVar || '');
         const latAscending = lat.length > 1 ? (lat[0] < lat[lat.length - 1]) : true;
 
-        const alphaValue = Math.round(opacity * 255);
+        const alphaValue = 255;
         let p = 0;
         for (let y = 0; y < height; y++) {
             const latIdx = latAscending ? (height - 1 - y) : y;
@@ -880,12 +879,14 @@ function setupEcmwfMap(meta, restore) {
             if (!Number.isFinite(tIdx)) return;
             const sIdx = (typeof ecmwfState.stepIndex === 'number') ? ecmwfState.stepIndex : 0;
             const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
+            const opacitySlider = document.getElementById('ecmwfOpacitySlider');
+            console.log('opacitySlider:', opacitySlider.value);
             if (isWindVar) {
                 // Wind variables: arrow markers (no heatmap)
-                requestEcmwfContours(tIdx, sIdx);
+                requestEcmwfContours(tIdx, sIdx, opacitySlider.value / 100);
             } else {
                 // Scalar variables: always render coloured contours/heatmap
-                renderEcmwfContourPlot(tIdx, sIdx);
+                renderEcmwfContourPlot(tIdx, sIdx, opacitySlider.value / 100);
             }
         };
     }
@@ -915,12 +916,17 @@ function setupEcmwfMap(meta, restore) {
             if (!Number.isFinite(sIdx)) return;
             const tIdx = (typeof ecmwfState.timeIndex === 'number') ? ecmwfState.timeIndex : 0;
             const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
+
+            const opacitySlider = document.getElementById('ecmwfOpacitySlider');
+            console.log('opacitySlider:', opacitySlider.value);
+            
+            
             if (isWindVar) {
                 // Wind variables: arrow markers (no heatmap)
-                requestEcmwfContours(tIdx, sIdx);
+                requestEcmwfContours(tIdx, sIdx, opacitySlider.value / 100);
             } else {
                 // Scalar variables: always render coloured contours/heatmap
-                renderEcmwfContourPlot(tIdx, sIdx);
+                renderEcmwfContourPlot(tIdx, sIdx, opacitySlider.value / 100);
             }
         };
     }
@@ -941,37 +947,32 @@ document.addEventListener('DOMContentLoaded', () => {
     // current heatmap layer (if present) so the user doesn't need to
     // press Render again.
     const opacitySlider = document.getElementById('ecmwfOpacitySlider');
-    if (opacitySlider) {
-        const applyOpacity = () => {
-            const raw = parseFloat(opacitySlider.value || '100');
-            const opacity = Number.isFinite(raw) ? raw / 100 : 1.0;
+    const applyOpacity = () => {
+        // If a heatLayer exists (scalar variable), adjust its opacity.
+        if (ecmwfState.heatLayer && leafletMap && leafletMap.hasLayer(ecmwfState.heatLayer)) {
+            ecmwfState.heatLayer.setOpacity(opacitySlider.value / 100);
+            return;
+        }
 
-            // If a heatLayer exists (scalar variable), adjust its opacity.
-            if (ecmwfState.heatLayer && leafletMap && leafletMap.hasLayer(ecmwfState.heatLayer)) {
-                ecmwfState.heatLayer.setOpacity(opacity);
-                return;
-            }
+        // For wind variables (no heatLayer), re-request contours so
+        // any future implementation that uses opacity can respond.
+        const timeSlider = document.getElementById('ecmwfTimeSlider');
+        const stepSlider = document.getElementById('ecmwfStepSlider');
+        let tIdx = timeSlider ? parseInt(timeSlider.value, 10) : (ecmwfState.timeIndex || 0);
+        let sIdx = stepSlider ? parseInt(stepSlider.value, 10) : (ecmwfState.stepIndex || 0);
+        if (!Number.isFinite(tIdx)) tIdx = 0;
+        if (!Number.isFinite(sIdx)) sIdx = 0;
 
-            // For wind variables (no heatLayer), re-request contours so
-            // any future implementation that uses opacity can respond.
-            const timeSlider = document.getElementById('ecmwfTimeSlider');
-            const stepSlider = document.getElementById('ecmwfStepSlider');
-            let tIdx = timeSlider ? parseInt(timeSlider.value, 10) : (ecmwfState.timeIndex || 0);
-            let sIdx = stepSlider ? parseInt(stepSlider.value, 10) : (ecmwfState.stepIndex || 0);
-            if (!Number.isFinite(tIdx)) tIdx = 0;
-            if (!Number.isFinite(sIdx)) sIdx = 0;
+        const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
+        if (isWindVar && typeof requestEcmwfContours === 'function') {
+            requestEcmwfContours(tIdx, sIdx);
+        } else if (typeof renderEcmwfContourPlot === 'function') {
+            // Re-render scalar fields with new opacity when layer
+            // hasn't been created yet.
+            renderEcmwfContourPlot(tIdx, sIdx, opacitySlider.value / 100);
+        }
+    };
 
-            const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
-            if (isWindVar && typeof requestEcmwfContours === 'function') {
-                requestEcmwfContours(tIdx, sIdx);
-            } else if (typeof renderEcmwfContourPlot === 'function') {
-                // Re-render scalar fields with new opacity when layer
-                // hasn't been created yet.
-                renderEcmwfContourPlot(tIdx, sIdx, opacity);
-            }
-        };
-
-        opacitySlider.addEventListener('input', applyOpacity);
-        opacitySlider.addEventListener('change', applyOpacity);
-    }
+    opacitySlider.addEventListener('input', applyOpacity);
+    opacitySlider.addEventListener('change', applyOpacity);
 });
