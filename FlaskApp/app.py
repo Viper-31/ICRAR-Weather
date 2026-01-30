@@ -1016,11 +1016,6 @@ def ecmwf_config():
             long_name = cached['long_name']
         else:
             print(f"⚠ Cache MISS for {var_name} [{start_idx}:{end_idx}], computing...")
-            
-            if time_dim and time_dim in base_da.dims:
-                base_slice = base_da.isel({time_dim: slice(start_idx, end_idx + 1)})
-            else:
-                base_slice = base_da
 
             # Compute colour-scale limits. 
             # For wind variables, this is based on magnitude derived from u/v components.
