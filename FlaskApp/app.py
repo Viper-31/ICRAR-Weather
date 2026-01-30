@@ -1,3 +1,22 @@
+"""Flask application entry point for the ICRAR weather visualisation web app.
+
+This service exposes DPIRD station observations and ECMWF operational forecasts
+over Western Australia via a single web UI. The front-end (templates/index.html
+and static assets) talks to the endpoints in this module to load metadata and
+field data for visualisation.
+
+Key responsibilities
+--------------------
+- Load DPIRD and ECMWF NetCDF datasets (from Acacia services or local files).
+- Subset data to Western Australia for efficient map rendering.
+- Provide DPIRD map/graph data and ECMWF fields/points to the browser.
+- Support a dual overlay mode where DPIRD and ECMWF are rendered together.
+
+The JavaScript files in static/ (index.js, dpird.js, ecmwf.js) orchestrate
+mode switching (DPIRD / ECMWF / Dual), populate configuration controls, and
+call these endpoints to render Leaflet maps and Plotly graphs in the browser.
+"""
+
 from flask import Flask, render_template, request, jsonify
 import xarray as xr
 import os
