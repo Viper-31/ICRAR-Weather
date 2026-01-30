@@ -26,7 +26,7 @@ const ECMWF_PREFIX_CMAPS = {
 };
 
 // Gradient definitions (CSS) and colour stops (for marker/overlay colouring)
-const CMAP_DEFS = {
+const ECMWF_CMAP_DEFS = {
     coolwarm: {
         gradient: 'linear-gradient(to top, #3b4cc0, #bcb8b7, #b40426)',
         stops: [
@@ -148,7 +148,7 @@ function getEcmwfCmapName(varName) {
 }
 
 function getEcmwfCmapDef(name) {
-    return CMAP_DEFS[name] || CMAP_DEFS.viridis;
+    return ECMWF_CMAP_DEFS[name] || ECMWF_CMAP_DEFS.viridis;
 }
 
 function lerp(a, b, t) {
@@ -783,7 +783,7 @@ async function requestEcmwfContours(timeIndex, stepIndex) {
                         pct = clamp01((v - vMin) / range);
                     }
                     const size = 0.5 + (pct * 1.5);
-                    // console.log('Creating wind arrow:', v, pct, size, angle);
+                    console.log('Creating wind arrow:', v, pct, size, angle);
                     const html = `<div class="rotator" style="--rot:${angle}deg; --size:${size}; color:${color};">
                         <svg class="arrow-svg" viewBox="0 0 24 24">
                             <g class="arrow-group" style="stroke:${color};">
