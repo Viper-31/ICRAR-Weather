@@ -124,7 +124,7 @@ class DPIRDService:
     def __init__(self):
         self.fs = get_filesystem()
         self.bucket = bucket
-        self.file_path = "clean_DPIRD/DPIRD_final_stations.nc"
+        self.file_path = "FINAL_DPIRD/DPIRD_final_stations.nc"
     
     def load_dataset(self):
         path = f"{self.bucket}/{self.file_path}"

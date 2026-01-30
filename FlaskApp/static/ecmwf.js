@@ -4,7 +4,7 @@
 const ECMWF_VAR_CMAPS = {
     t2m: 'coolwarm',
     d2m: 'coolwarm',
-    msl: 'Spectral_r',
+    msl: 'viridis',
     sh2: 'GnBu',
     swvl1: 'YlGnBu',
     cp: 'Purples',
@@ -18,7 +18,7 @@ const ECMWF_VAR_CMAPS = {
 };
 
 const ECMWF_PREFIX_CMAPS = {
-    z: 'copper',
+    z: 'viridis',
     t: 'coolwarm',
     r: 'YlGnBu',
     q: 'GnBu',
@@ -26,23 +26,13 @@ const ECMWF_PREFIX_CMAPS = {
 };
 
 // Gradient definitions (CSS) and colour stops (for marker/overlay colouring)
-const ECMWF_CMAP_DEFS = {
+const CMAP_DEFS = {
     coolwarm: {
-        gradient: 'linear-gradient(to top, #0022ff, #ff0000)',
+        gradient: 'linear-gradient(to top, #3b4cc0, #bcb8b7, #b40426)',
         stops: [
             { pos: 0.0, color: [59, 76, 192] },
             { pos: 0.5, color: [188, 184, 183] },
             { pos: 1.0, color: [180, 4, 38] }
-        ]
-    },
-    Spectral_r: {
-        gradient: 'linear-gradient(to top, #5e4fa2, #3288bd, #66c2a5, #fdae61, #d53e4f, #9e0142)',
-        stops: [
-            { pos: 0.0, color: [94, 79, 162] },
-            { pos: 0.25, color: [50, 136, 189] },
-            { pos: 0.5, color: [102, 194, 165] },
-            { pos: 0.75, color: [253, 174, 97] },
-            { pos: 1.0, color: [158, 1, 66] }
         ]
     },
     GnBu: {
@@ -83,14 +73,6 @@ const ECMWF_CMAP_DEFS = {
             { pos: 0.0, color: [254, 224, 210] },
             { pos: 0.5, color: [252, 146, 114] },
             { pos: 1.0, color: [203, 24, 29] }
-        ]
-    },
-    copper: {
-        gradient: 'linear-gradient(to top, #000000, #b87333, #ffdead)',
-        stops: [
-            { pos: 0.0, color: [0, 0, 0] },
-            { pos: 0.5, color: [184, 115, 51] },
-            { pos: 1.0, color: [255, 222, 173] }
         ]
     },
     RdBu_r: {
@@ -156,7 +138,7 @@ function getEcmwfCmapName(varName) {
 }
 
 function getEcmwfCmapDef(name) {
-    return ECMWF_CMAP_DEFS[name] || ECMWF_CMAP_DEFS.viridis;
+    return CMAP_DEFS[name] || CMAP_DEFS.viridis;
 }
 
 function lerp(a, b, t) {
@@ -308,8 +290,8 @@ async function uploadEcmwfFile() {
 }
 
 async function runEcmwfVisualization() {
-    if (appMode !== 'ecmwf') {
-        alert('ECMWF rendering is only available in ECMWF mode.');
+    if (appMode !== 'ecmwf' && appMode !== 'dual') {
+        alert('Rendering ECMWF visualization is only available in ECMWF or Dual mode.');
         return;
     }
     if (!ecmwfState.timeLabels || ecmwfState.timeLabels.length === 0) {
@@ -329,6 +311,9 @@ async function runEcmwfVisualization() {
     const useContours = contourToggle ? !!contourToggle.checked : false;
     const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
     // Wind variables are always shown as arrows on data points (no contour heatmap)
+
+    const opacitySlider = document.getElementById('ecmwfOpacitySlider');
+    const opacity = opacitySlider ? parseFloat(opacitySlider.value, 10)/100 : 1.0;
     if (isWindVar) {
         ecmwfState.useContours = false;
         if (!leafletMap && ecmwfState.timeLabels.length) {
@@ -344,7 +329,7 @@ async function runEcmwfVisualization() {
             if (!leafletMap && ecmwfState.timeLabels.length) {
                 setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
             }
-            await renderEcmwfContourPlot(tIdx, sIdx);
+            await renderEcmwfContourPlot(tIdx, sIdx, opacity);
         } else {
             if (!leafletMap && ecmwfState.timeLabels.length) {
                 setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
@@ -355,10 +340,15 @@ async function runEcmwfVisualization() {
             await requestEcmwfContours(tIdx, sIdx);
         }
     }
+
+    // Reveal the ECMWF time/step controls only after a render
+    const timeCard = document.getElementById('ecmwfTimeCard');
+    if (timeCard) timeCard.classList.remove('hidden');
+
     setLoading(false, '');
 }
 
-async function renderEcmwfContourPlot(timeIndex, stepIndex) {
+async function renderEcmwfContourPlot(timeIndex, stepIndex, opacity = 1.0) {
     const statusText = document.getElementById('status-text');
     try {
         const body = {
@@ -380,19 +370,72 @@ async function renderEcmwfContourPlot(timeIndex, stepIndex) {
 
         const backendLabel = data.time_label || `T[${timeIndex}] +S[${stepIndex}]`;
         const validLabel = formatEcmwfValidTime(timeIndex, stepIndex);
+        
+        // Update colorbar and labels
         const timeLabelEl = document.getElementById('ecmwfTimeLabel');
         if (timeLabelEl) timeLabelEl.innerText = backendLabel;
-        const activeTime = document.getElementById('active-time');
-        if (activeTime) activeTime.innerText = validLabel;
+        
         const overlay = document.getElementById('ecmwf-time-overlay');
         if (overlay) {
             overlay.textContent = validLabel;
             overlay.classList.remove('hidden');
         }
-        if (statusText) statusText.innerText = validLabel;
-
-        const activeVar = document.getElementById('active-var');
-        if (activeVar) activeVar.innerText = ecmwfState.currentVar || 'ECMWF';
+        
+        // Colorbar logic based on mode
+        if (appMode === 'ecmwf') {
+            // ECMWF-only mode: Use DPIRD colorbar element styled for ECMWF
+            const colorBar = document.getElementById('color-bar');
+            const maxValEl = document.getElementById('max-val');
+            const minValEl = document.getElementById('min-val');
+            const activeVar = document.getElementById('active-var');
+            const activeUnits = document.getElementById('active-units');
+            const activeTime = document.getElementById('active-time');
+            
+            const cmapDef = getEcmwfCmapDef(ecmwfState.cmapName || 'viridis');
+            if (colorBar) colorBar.style.background = cmapDef.gradient;
+            if (maxValEl) maxValEl.innerText = ecmwfState.vMax.toFixed(1);
+            if (minValEl) minValEl.innerText = ecmwfState.vMin.toFixed(1);
+            if (activeVar) activeVar.innerText = ecmwfState.longName || ecmwfState.currentVar || 'ECMWF';
+            if (activeUnits) activeUnits.innerText = ecmwfState.units ? `(${ecmwfState.units})` : '';
+            if (activeTime) activeTime.innerText = validLabel;
+            if (statusText) statusText.innerText = validLabel;
+        } else if (appMode === 'dual') {
+            // Dual mode - update appropriate colorbar based on variable
+            if (shouldUseSharedColorbar()) {
+                const colorBar = document.getElementById('color-bar');
+                const maxValEl = document.getElementById('max-val');
+                const minValEl = document.getElementById('min-val');
+                const activeVar = document.getElementById('active-var');
+                const activeUnits = document.getElementById('active-units');
+                const activeTime = document.getElementById('active-time');
+                const coolwarmDef = getEcmwfCmapDef('coolwarm');
+                
+                if (colorBar) colorBar.style.background = coolwarmDef.gradient;
+                if (maxValEl) maxValEl.innerText = ecmwfState.vMax.toFixed(1);
+                if (minValEl) minValEl.innerText = ecmwfState.vMin.toFixed(1);
+                if (activeVar) activeVar.innerText = ecmwfState.longName || ecmwfState.currentVar;
+                if (activeUnits) activeUnits.innerText = ecmwfState.units ? `(${ecmwfState.units})` : '';
+                if (activeTime) activeTime.innerText = validLabel;
+            } else {
+                // Separate ECMWF colorbar
+                if (typeof updateEcmwfColorbar === 'function') {
+                    updateEcmwfColorbar(
+                        ecmwfState.vMin,
+                        ecmwfState.vMax,
+                        ecmwfState.currentVar,
+                        ecmwfState.units || '--',
+                        ecmwfState.longName || ecmwfState.currentVar,
+                        validLabel
+                    );
+                }
+            }
+            
+            // Update colorbar visibility after rendering
+            if (typeof updateColorbarVisibility === 'function') {
+                updateColorbarVisibility();
+            }
+        }
+        
         if (!leafletMap) return;
 
         if (ecmwfState.layer && leafletMap.hasLayer(ecmwfState.layer)) {
@@ -419,6 +462,7 @@ async function renderEcmwfContourPlot(timeIndex, stepIndex) {
         const cmap = ecmwfState.cmapName || getEcmwfCmapName(ecmwfState.currentVar || '');
         const latAscending = lat.length > 1 ? (lat[0] < lat[lat.length - 1]) : true;
 
+        const alphaValue = Math.round(opacity * 255);
         let p = 0;
         for (let y = 0; y < height; y++) {
             const latIdx = latAscending ? (height - 1 - y) : y;
@@ -444,7 +488,7 @@ async function renderEcmwfContourPlot(timeIndex, stepIndex) {
                     imgData.data[p++] = r;
                     imgData.data[p++] = g;
                     imgData.data[p++] = b;
-                    imgData.data[p++] = 200;
+                    imgData.data[p++] = alphaValue;
                 }
             }
         }
@@ -464,7 +508,11 @@ async function renderEcmwfContourPlot(timeIndex, stepIndex) {
         if (ecmwfState.heatLayer && leafletMap.hasLayer(ecmwfState.heatLayer)) {
             leafletMap.removeLayer(ecmwfState.heatLayer);
         }
-        ecmwfState.heatLayer = L.imageOverlay(url, bounds, { opacity: 1 }).addTo(leafletMap);
+        ecmwfState.heatLayer = L.imageOverlay(url, bounds, { opacity: opacity }).addTo(leafletMap);
+
+        if (ecmwfState.heatLayer && typeof ecmwfState.heatLayer.bringToBack === 'function') {
+            ecmwfState.heatLayer.bringToBack();
+        }
     } catch (err) {
         console.error(err);
         if (statusText) statusText.innerText = `ECMWF error: ${err.message}`;
@@ -475,7 +523,7 @@ async function updateEcmwfConfigFromUi() {
     const varSelect = document.getElementById('ecmwfVarSelect');
     const startSel = document.getElementById('ecmwfStartSelect');
     const endSel = document.getElementById('ecmwfEndSelect');
-    const statusText = document.getElementById('status-text');
+    
     if (!varSelect || !startSel || !endSel) return;
 
     let varName = varSelect.value;
@@ -497,8 +545,9 @@ async function updateEcmwfConfigFromUi() {
         ? ecmwfState.dateEndIndices[Math.max(0, Math.min(endGroup, maxGroup))]
         : (ecmwfState.timeLabels.length ? ecmwfState.timeLabels.length - 1 : 0);
 
+    setLoading(true, 'Configuring ECMWF view...')
+
     try {
-        setLoading(true, 'Configuring ECMWF view...');
         const res = await fetch('/ecmwf_config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -512,10 +561,12 @@ async function updateEcmwfConfigFromUi() {
 
         ecmwfState.currentVar = varName;
         ecmwfState.cmapName = getEcmwfCmapName(varName);
-        ecmwfState.vMin = typeof data.v_min === 'number' ? data.v_min : ecmwfState.vMin;
-        ecmwfState.vMax = typeof data.v_max === 'number' ? data.v_max : ecmwfState.vMax;
-        ecmwfState.rangeStart = typeof data.range_start === 'number' ? data.range_start : startIdx;
-        ecmwfState.rangeEnd = typeof data.range_end === 'number' ? data.range_end : endIdx;
+        ecmwfState.vMin = data.v_min;
+        ecmwfState.vMax = data.v_max;
+        ecmwfState.rangeStart = data.range_start || 0;
+        ecmwfState.rangeEnd = data.range_end || 0;
+        ecmwfState.units = data.units || '--';
+        ecmwfState.longName = data.long_name || varName;
 
         const timeSlider = document.getElementById('ecmwfTimeSlider');
         const timeLabelEl = document.getElementById('ecmwfTimeLabel');
@@ -535,17 +586,54 @@ async function updateEcmwfConfigFromUi() {
             ecmwfState.timeIndex = clamped;
         }
 
-        const colorBar = document.getElementById('color-bar');
-        const maxValEl = document.getElementById('max-val');
-        const minValEl = document.getElementById('min-val');
-        const rightUi = document.getElementById('right-ui-stack');
-        const activeVar = document.getElementById('active-var');
-        const cmapDef = getEcmwfCmapDef(ecmwfState.cmapName || 'viridis');
-        if (colorBar) colorBar.style.background = cmapDef.gradient;
-        if (typeof ecmwfState.vMax === 'number' && maxValEl) maxValEl.innerText = ecmwfState.vMax.toFixed(1);
-        if (typeof ecmwfState.vMin === 'number' && minValEl) minValEl.innerText = ecmwfState.vMin.toFixed(1);
-        if (rightUi) rightUi.style.display = 'flex';
-        if (activeVar) activeVar.innerText = varName;
+        if (appMode === 'ecmwf') {
+            const colorBar = document.getElementById('color-bar');
+            const maxValEl = document.getElementById('max-val');
+            const minValEl = document.getElementById('min-val');
+            const activeVar = document.getElementById('active-var');
+            const activeUnits = document.getElementById('active-units');
+            const rightUi = document.getElementById('right-ui-stack');
+            const dpirdColorbar = document.getElementById('dpird-colorbar-card');
+            
+            const cmapDef = getEcmwfCmapDef(ecmwfState.cmapName || 'viridis');
+            if (colorBar) colorBar.style.background = cmapDef.gradient;
+            if (maxValEl) maxValEl.innerText = ecmwfState.vMax.toFixed(1);
+            if (minValEl) minValEl.innerText = ecmwfState.vMin.toFixed(1);
+            if (activeVar) activeVar.innerText = ecmwfState.longName || varName;
+            if (activeUnits) activeUnits.innerText = ecmwfState.units ? `(${ecmwfState.units})` : '';
+            if (rightUi) rightUi.style.display = 'flex';
+            if (dpirdColorbar) dpirdColorbar.classList.remove('hidden');
+            if (dpirdColorbarHeader) dpirdColorbarHeader.textContent = 'ECMWF';
+        } else if (appMode === 'dual') {
+            // Dual mode - update ECMWF colorbar
+            if (shouldUseSharedColorbar()) {
+                // Use shared colorbar (DPIRD element with coolwarm)
+                const colorBar = document.getElementById('color-bar');
+                const maxValEl = document.getElementById('max-val');
+                const minValEl = document.getElementById('min-val');
+                const activeVar = document.getElementById('active-var');
+                const activeUnits = document.getElementById('active-units')
+                const dpirdColorbarHeader = document.getElementById('dpird-colorbar-header');
+                
+                if (colorBar) colorBar.style.background = coolwarmDef.gradient;
+                if (maxValEl) maxValEl.innerText = ecmwfState.vMax.toFixed(1);
+                if (minValEl) minValEl.innerText = ecmwfState.vMin.toFixed(1);
+                if (activeVar) activeVar.innerText = `${ecmwfState.longName} / ${varName}`;
+                if (activeUnits) activeUnits.innerText = ecmwfState.units ? `(${ecmwfState.units})` : '';
+                if (dpirdColorbarHeader) dpirdColorbarHeader.textContent = 'Shared (ECMWF + DPIRD)'
+            } else {
+                // Separate ECMWF colorbar
+                updateEcmwfColorbar(
+                    ecmwfState.vMin,
+                    ecmwfState.vMax,
+                    varName,
+                    ecmwfState.units,
+                    ecmwfState.longName,
+                    formatEcmwfValidTime(ecmwfState.timeIndex, ecmwfState.stepIndex)
+                );
+            }
+            updateColorbarVisibility();
+        }
 
         // Hide contour/heatmap toggle for wind variables (always show arrows)
         const viewModeCard = document.getElementById('ecmwfViewModeCard');
@@ -688,6 +776,7 @@ async function requestEcmwfContours(timeIndex, stepIndex) {
 
         if (ecmwfState.layer && leafletMap.hasLayer(ecmwfState.layer)) {
             leafletMap.removeLayer(ecmwfState.layer);
+            ecmwfState.layer = null;
         }
 
         const layer = L.geoJSON(data.geojson, {
@@ -707,7 +796,7 @@ async function requestEcmwfContours(timeIndex, stepIndex) {
                         pct = clamp01((v - vMin) / range);
                     }
                     const size = 0.5 + (pct * 1.5);
-                    console.log('Creating wind arrow:', v, pct, size, angle);
+                    // console.log('Creating wind arrow:', v, pct, size, angle);
                     const html = `<div class="rotator" style="--rot:${angle}deg; --size:${size}; color:${color};">
                         <svg class="arrow-svg" viewBox="0 0 24 24">
                             <g class="arrow-group" style="stroke:${color};">
@@ -770,7 +859,6 @@ function setupEcmwfMap(meta, restore) {
     const timeCard = document.getElementById('ecmwfTimeCard');
     const timeSlider = document.getElementById('ecmwfTimeSlider');
     const timeLabelEl = document.getElementById('ecmwfTimeLabel');
-    const stepCard = document.getElementById('ecmwfStepCard');
     const stepSlider = document.getElementById('ecmwfStepSlider');
     const stepLabelEl = document.getElementById('ecmwfStepLabel');
 
@@ -787,7 +875,12 @@ function setupEcmwfMap(meta, restore) {
         timeSlider.value = String(safeT);
         const lbl = timeLabels[safeT] || `T[${safeT}]`;
         timeLabelEl.innerText = lbl;
-        timeCard.classList.remove('hidden');
+
+        // Keep the card hidden until the user triggers a render.
+        // On restored maps, respect the existing visibility state.
+        if (!restore) {
+            timeCard.classList.add('hidden');
+        }
 
         timeSlider.oninput = (e) => {
             const idx = parseInt(e.target.value, 10);
@@ -807,7 +900,7 @@ function setupEcmwfMap(meta, restore) {
         };
     }
 
-    if (stepCard && stepSlider && stepLabelEl) {
+    if (stepSlider && stepLabelEl) {
         const maxStep = Math.max(0, (Array.isArray(ecmwfState.stepValues) ? ecmwfState.stepValues.length : 0) - 1);
         stepSlider.min = '0';
         stepSlider.max = String(maxStep);
@@ -818,7 +911,6 @@ function setupEcmwfMap(meta, restore) {
             ? ecmwfState.stepValues[safeS]
             : 0;
         stepLabelEl.innerText = `+${stepVal} h`;
-        stepCard.classList.remove('hidden');
 
         stepSlider.oninput = (e) => {
             const idx = parseInt(e.target.value, 10);
