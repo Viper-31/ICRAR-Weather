@@ -6,14 +6,27 @@
 // updateVariableDependentUI, toggleViewUI, teardownMap, computeScalarColor
 // initializePlayback, pausePlayback,
 // clearPlaybackAttention.
-
 // Upload DPIRD NetCDF file and initialise config UI
 
+// DPIRD variable to colormap mapping
+const DPIRD_VAR_CMAPS = {
+    airTemperature: 'coolwarm',
+    apparentAirTemperature: 'coolwarm',
+    dewPoint: 'coolwarm',
+    wetBulb: 'coolwarm',
+    deltaT: 'RdBu_r',
+    relativeHumidity: 'Blues',
+    panEvaporation: 'YlGnBu',
+    evaporationTranspiration: 'YlGn',
+    solarExposure: 'plasma',
+    rainfall: 'Blues',
+    frostcondition: 'Blues',
+    heatcondition: 'Reds' 
+};
 
 // DPIRD colormaps
-const DPIRD_CMAP_DEFS = {
-    airTemperature: {
-        scale: 'coolwarm',
+const CMAP_DEFS = {
+    coolwarm: {
         gradient: 'linear-gradient(to top, #3b4cc0, #bcb8b7, #b40426)',
         stops: [
             { pos: 0.0, color: [59, 76, 192] },
@@ -21,26 +34,7 @@ const DPIRD_CMAP_DEFS = {
             { pos: 1.0, color: [180, 4, 38] }
         ]
     },
-    dewPoint: {
-        scale: 'coolwarm',
-        gradient: 'linear-gradient(to top, #3b4cc0, #bcb8b7, #b40426)',
-        stops: [
-            { pos: 0.0, color: [59, 76, 192] },
-            { pos: 0.5, color: [188, 184, 183] },
-            { pos: 1.0, color: [180, 4, 38] }
-        ]
-    },
-    relativeHumidity: {
-        scale: 'Blues',
-        gradient: 'linear-gradient(to top, #eff3ff, #6baed6, #08519c)',
-        stops: [
-            { pos: 0.0, color: [239, 243, 255] },
-            { pos: 0.5, color: [107, 174, 214] },
-            { pos: 1.0, color: [8, 81, 156] }
-        ]
-    },
-    wind_3m: {
-        scale: 'Plasma',
+    plasma: {
         gradient: 'linear-gradient(to top, #0d0887, #cc4678, #f0f921)',
         stops: [
             { pos: 0.0, color: [13, 8, 135] },
@@ -48,8 +42,71 @@ const DPIRD_CMAP_DEFS = {
             { pos: 1.0, color: [240, 249, 33] }
         ]
     },
-    default: {
-        scale: 'Viridis',
+    GnBu: {
+        gradient: 'linear-gradient(to top, #f7fcf0, #7bccc4, #084081)',
+        stops: [
+            { pos: 0.0, color: [247, 252, 240] },
+            { pos: 0.5, color: [123, 204, 196] },
+            { pos: 1.0, color: [8, 64, 129] }
+        ]
+    },
+    YlGn: {
+        gradient: 'linear-gradient(to top, #ffffe5, #66c2a4, #00441b)',
+        stops: [
+            { pos: 0.0, color: [255, 255, 229] },
+            { pos: 0.5, color: [102, 194, 164] },
+            { pos: 1.0, color: [0, 68, 27] }
+        ]
+    },
+    YlGnBu: {
+        gradient: 'linear-gradient(to top, #ffffd9, #41b6c4, #081d58)',
+        stops: [
+            { pos: 0.0, color: [255, 255, 217] },
+            { pos: 0.5, color: [65, 182, 196] },
+            { pos: 1.0, color: [8, 29, 88] }
+        ]
+    },
+    Purples: {
+        gradient: 'linear-gradient(to top, #f2f0f7, #9e9ac8, #3f007d)',
+        stops: [
+            { pos: 0.0, color: [242, 240, 247] },
+            { pos: 0.5, color: [158, 154, 200] },
+            { pos: 1.0, color: [63, 0, 125] }
+        ]
+    },
+    Blues: {
+        gradient: 'linear-gradient(to top, #eff3ff, #6baed6, #08519c)',
+        stops: [
+            { pos: 0.0, color: [239, 243, 255] },
+            { pos: 0.5, color: [107, 174, 214] },
+            { pos: 1.0, color: [8, 81, 156] }
+        ]
+    },
+    Reds: {
+        gradient: 'linear-gradient(to top, #fee0d2, #fc9272, #cb181d)',
+        stops: [
+            { pos: 0.0, color: [254, 224, 210] },
+            { pos: 0.5, color: [252, 146, 114] },
+            { pos: 1.0, color: [203, 24, 29] }
+        ]
+    },
+    RdBu_r: {
+        gradient: 'linear-gradient(to top, #053061, #2166ac, #f7f7f7, #b2182b, #67001f)',
+        stops: [
+            { pos: 0.0, color: [5, 48, 97] },
+            { pos: 0.5, color: [247, 247, 247] },
+            { pos: 1.0, color: [103, 0, 31] }
+        ]
+    },
+    Greys_trunc: {
+        gradient: 'linear-gradient(to top, #f7f7f7, #bdbdbd, #636363)',
+        stops: [
+            { pos: 0.0, color: [247, 247, 247] },
+            { pos: 0.5, color: [189, 189, 189] },
+            { pos: 1.0, color: [99, 99, 99] }
+        ]
+    },
+    viridis: {
         gradient: 'linear-gradient(to top, #440154, #218f8d, #fde725)',
         stops: [
             { pos: 0.0, color: [68, 1, 84] },
@@ -61,7 +118,8 @@ const DPIRD_CMAP_DEFS = {
 
 // Helper to get colormap definition for a DPIRD variable
 function getDpirdCmapDef(varName) {
-    return DPIRD_CMAP_DEFS[varName] || DPIRD_CMAP_DEFS.default;
+    const cmapName = DPIRD_VAR_CMAPS[varName] || 'viridis';
+    return CMAP_DEFS[cmapName] || CMAP_DEFS['viridis'];
 }
 
 // Linear interpolation helper
@@ -112,10 +170,13 @@ function sampleDpirdColormap(pct, varName) {
             return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(bVal)})`;
         }
     }
+    // Fallback if no stops matched
+    const c = stops[stops.length - 1].color;
+    return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
 }
 
 // Compute color for a scalar value using the DPIRD colormap
-function DpirdMissingColor(value, vMin, vMax, varName) {
+function computeDpirdColor(value, vMin, vMax, varName) {
     if (!Number.isFinite(value) || vMin === null || vMax === null) {
         return 'rgb(0, 0, 0)'; // Black for missing data
     }
@@ -279,7 +340,9 @@ async function renderMap(varName) {
                     angleVal = isWindDeg ? (Number.isFinite(raw) ? raw : 0) : null;
                 }
 
-                const color = DpirdMissingColor(speedVal, d.v_min, d.v_max, varName);
+                const color = (isCombinedWind || isWindDeg || isWindSpeed)
+                    ? 'rgb(0, 0, 0)'  // Monochrome black for all wind arrows
+                    : computeDpirdColor(speedVal, d.v_min, d.v_max, varName);
                 const range = (d.v_max - d.v_min) || 1;
                 const pct = clamp01((speedVal - d.v_min) / range);
 

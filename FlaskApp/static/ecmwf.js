@@ -4,7 +4,7 @@
 const ECMWF_VAR_CMAPS = {
     t2m: 'coolwarm',
     d2m: 'coolwarm',
-    msl: 'Spectral_r',
+    msl: 'viridis',
     sh2: 'GnBu',
     swvl1: 'YlGnBu',
     cp: 'Purples',
@@ -18,7 +18,7 @@ const ECMWF_VAR_CMAPS = {
 };
 
 const ECMWF_PREFIX_CMAPS = {
-    z: 'copper',
+    z: 'viridis',
     t: 'coolwarm',
     r: 'YlGnBu',
     q: 'GnBu',
@@ -26,23 +26,13 @@ const ECMWF_PREFIX_CMAPS = {
 };
 
 // Gradient definitions (CSS) and colour stops (for marker/overlay colouring)
-const ECMWF_CMAP_DEFS = {
+const CMAP_DEFS = {
     coolwarm: {
         gradient: 'linear-gradient(to top, #3b4cc0, #bcb8b7, #b40426)',
         stops: [
             { pos: 0.0, color: [59, 76, 192] },
             { pos: 0.5, color: [188, 184, 183] },
             { pos: 1.0, color: [180, 4, 38] }
-        ]
-    },
-    Spectral_r: {
-        gradient: 'linear-gradient(to top, #5e4fa2, #3288bd, #66c2a5, #fdae61, #d53e4f, #9e0142)',
-        stops: [
-            { pos: 0.0, color: [94, 79, 162] },
-            { pos: 0.25, color: [50, 136, 189] },
-            { pos: 0.5, color: [102, 194, 165] },
-            { pos: 0.75, color: [253, 174, 97] },
-            { pos: 1.0, color: [158, 1, 66] }
         ]
     },
     GnBu: {
@@ -83,14 +73,6 @@ const ECMWF_CMAP_DEFS = {
             { pos: 0.0, color: [254, 224, 210] },
             { pos: 0.5, color: [252, 146, 114] },
             { pos: 1.0, color: [203, 24, 29] }
-        ]
-    },
-    copper: {
-        gradient: 'linear-gradient(to top, #000000, #b87333, #ffdead)',
-        stops: [
-            { pos: 0.0, color: [0, 0, 0] },
-            { pos: 0.5, color: [184, 115, 51] },
-            { pos: 1.0, color: [255, 222, 173] }
         ]
     },
     RdBu_r: {
@@ -156,7 +138,7 @@ function getEcmwfCmapName(varName) {
 }
 
 function getEcmwfCmapDef(name) {
-    return ECMWF_CMAP_DEFS[name] || ECMWF_CMAP_DEFS.viridis;
+    return CMAP_DEFS[name] || CMAP_DEFS.viridis;
 }
 
 function lerp(a, b, t) {
