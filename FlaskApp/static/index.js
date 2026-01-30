@@ -16,29 +16,6 @@ const createDefaultMapState = () => ({
 let latestMapCoords = createDefaultMapState();
 let lastMapRequestBody = null;
 
-const colorMaps = {
-    'airTemperature': { 
-        scale: 'coolwarm', 
-        gradient: 'linear-gradient(to top, #3b4cc0, #bcb8b7, #b40426)',
-        stops: [
-            { pos: 0.0, color: [59, 76, 192] },
-            { pos: 0.5, color: [188, 184, 183] },
-            { pos: 1.0, color: [180, 4, 38] }
-        ]
-    },
-    'dewPoint': { 
-        scale: 'coolwarm', 
-        gradient: 'linear-gradient(to top, #3b4cc0, #bcb8b7, #b40426)',
-        stops: [
-            { pos: 0.0, color: [59, 76, 192] },
-            { pos: 0.5, color: [188, 184, 183] },
-            { pos: 1.0, color: [180, 4, 38] }
-        ]
-    },
-    'relativeHumidity': { scale: 'Blues', gradient: 'linear-gradient(to top, #eff3ff, #6baed6, #08519c)' },
-    'wind_3m_degN': { scale: 'Hsv', gradient: 'linear-gradient(to right, red, yellow, green, blue, red)' },
-    'default': { scale: 'Viridis', gradient: 'linear-gradient(to top, #440154, #218f8d, #fde725)' }
-};
 const WA_BOUNDS = [[-36.0, 110.0], [-10.0, 135.0]]; // Lat/Lon bounds covering WA with margin
 const WA_BOUNDS_PADDING = 0.05; // extra padding for max bounds
 const PLAYBACK_DELAY_MS = 500;
@@ -805,17 +782,6 @@ function clamp01(value) {
     if (value < 0) return 0;
     if (value > 1) return 1;
     return value;
-}
-
-function computeScalarColor(rawValue, min, max) {
-    if (!Number.isFinite(rawValue) || min === null || max === null) {
-        return { pct: 0, color: 'rgb(148, 163, 184)' };
-    }
-    const range = (max - min) || 1;
-    const pct = clamp01((rawValue - min) / range);
-    const r = Math.floor(255 * pct);
-    const b = Math.floor(255 * (1 - pct));
-    return { pct, color: `rgb(${r}, 50, ${b})` };
 }
 
 function toggleViewUI() {
