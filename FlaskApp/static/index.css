@@ -119,9 +119,10 @@ button:disabled { background: #cbd5e1; cursor: not-allowed; }
     top: 15px;
     right: 15px;
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
     gap: 10px;
     pointer-events: none;
+    max-width: 150px;
     z-index: 1000;
 }
 

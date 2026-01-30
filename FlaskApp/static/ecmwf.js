@@ -769,7 +769,7 @@ async function requestEcmwfContours(timeIndex, stepIndex) {
             pointToLayer: (feature, latlng) => {
                 const props = feature.properties || {};
                 const v = props.value;
-                const color = 'rgb(0, 0, 0)';
+                const color = 'rgb(58, 58, 58)';
 
                 // For wind variables, always render arrows using speed & angle from due north
                 if (typeof props.angle_degN === 'number') {
@@ -782,8 +782,11 @@ async function requestEcmwfContours(timeIndex, stepIndex) {
                         pct = clamp01((v - vMin) / range);
                     }
                     const size = 0.5 + (pct * 1.5);
+                    const opacitySlider = document.getElementById('ecmwfOpacitySlider');
+                    const opacity = opacitySlider ? (opacitySlider.value / 100) : 1.0;
+
                     console.log('Creating wind arrow:', v, pct, size, angle);
-                    const html = `<div class="rotator" style="--rot:${angle}deg; --size:${size}; color:${color};">
+                    const html = `<div class="rotator" style="--rot:${angle}deg; --size:${size}; color:${color}; opacity:${opacity};">
                         <svg class="arrow-svg" viewBox="0 0 24 24">
                             <g class="arrow-group" style="stroke:${color};">
                                 <line x1="2" y1="12" x2="21" y2="12" class="arrow-path arrow-fill" />
