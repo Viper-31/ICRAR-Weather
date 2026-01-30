@@ -1278,6 +1278,42 @@ function startPlayback() {
         }
         playback.slider.value = nextIndex;
         playback.updateMarkers(nextIndex);
+
+        // In dual mode, keep ECMWF aligned at 1h steps while
+        // DPIRD advances in 15-minute steps. Every 4th DPIRD
+        // frame (0,1,2,3 → then 4) we bump the ECMWF step.
+        if (appMode === 'dual' && loadedDatasets && loadedDatasets.ecmwf && (nextIndex % 4 === 0)) {
+            const stepSlider = document.getElementById('ecmwfStepSlider');
+            const stepLabelEl = document.getElementById('ecmwfStepLabel');
+            if (stepSlider && typeof ecmwfState !== 'undefined' && ecmwfState.timeLabels.length) {
+                const maxStep = parseInt(stepSlider.max || '0', 10) || 0;
+                let currentStep = parseInt(stepSlider.value || '0', 10);
+                if (!Number.isFinite(currentStep)) currentStep = 0;
+                let nextStep = currentStep + 1;
+                if (nextStep > maxStep) nextStep = maxStep;
+                stepSlider.value = String(nextStep);
+
+                // Update the visible "+X h" label to match the new step
+                let stepVal = 0;
+                if (Array.isArray(ecmwfState.stepValues) && nextStep < ecmwfState.stepValues.length) {
+                    const raw = ecmwfState.stepValues[nextStep];
+                    stepVal = typeof raw === 'number' ? raw : 0;
+                }
+                if (stepLabelEl) {
+                    stepLabelEl.innerText = `+${stepVal} h`;
+                }
+
+                const tIdx = (typeof ecmwfState.timeIndex === 'number') ? ecmwfState.timeIndex : 0;
+                const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
+                if (typeof requestEcmwfContours === 'function' && typeof renderEcmwfContourPlot === 'function') {
+                    if (isWindVar) {
+                        requestEcmwfContours(tIdx, nextStep);
+                    } else {
+                        renderEcmwfContourPlot(tIdx, nextStep);
+                    }
+                }
+            }
+        }
     }, PLAYBACK_DELAY_MS);
 }
 
