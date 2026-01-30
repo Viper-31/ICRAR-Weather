@@ -1049,8 +1049,8 @@ def ecmwf_config():
                 if hasattr(base_slice, 'chunks'):
                     with dask.config.set(scheduler='threads'):
                         computed = base_slice.compute()
-                        v_min = float(computed.min())
-                        v_max = float(computed.max())
+                        v_min = float(np.nanmin(computed.values))
+                        v_max = float(np.nanmax(computed.values))
                 else:
                     v_min = float(base_slice.min(skipna=True).values)
                     v_max = float(base_slice.max(skipna=True).values)
