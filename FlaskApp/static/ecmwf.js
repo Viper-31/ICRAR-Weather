@@ -127,6 +127,12 @@ window.populateEcmwfUi = function(data) {
         window.registerEcmwfUiMeta(data);
     }
 
+    // Show which ECMWF file/dataset is currently loaded (including preloads)
+    const ecmwfInfo = document.getElementById('ecmwfUploadInfo');
+    if (ecmwfInfo && data.source_label) {
+        ecmwfInfo.textContent = `Loaded: ${data.source_label}`;
+    }
+
     // Update internal ECMWF state
     ecmwfState.timeLabels = Array.isArray(data.time_labels) ? data.time_labels : [];
     ecmwfState.stepValues = Array.isArray(data.step_values) ? data.step_values : [];
@@ -947,5 +953,43 @@ document.addEventListener('DOMContentLoaded', () => {
     const viewModeCard = document.getElementById('ecmwfViewModeCard');
     if (viewModeCard) {
         viewModeCard.classList.add('hidden');
+    }
+
+    // When the ECMWF opacity slider changes, immediately update the
+    // current heatmap layer (if present) so the user doesn't need to
+    // press Render again.
+    const opacitySlider = document.getElementById('ecmwfOpacitySlider');
+    if (opacitySlider) {
+        const applyOpacity = () => {
+            const raw = parseFloat(opacitySlider.value || '100');
+            const opacity = Number.isFinite(raw) ? raw / 100 : 1.0;
+
+            // If a heatLayer exists (scalar variable), adjust its opacity.
+            if (ecmwfState.heatLayer && leafletMap && leafletMap.hasLayer(ecmwfState.heatLayer)) {
+                ecmwfState.heatLayer.setOpacity(opacity);
+                return;
+            }
+
+            // For wind variables (no heatLayer), re-request contours so
+            // any future implementation that uses opacity can respond.
+            const timeSlider = document.getElementById('ecmwfTimeSlider');
+            const stepSlider = document.getElementById('ecmwfStepSlider');
+            let tIdx = timeSlider ? parseInt(timeSlider.value, 10) : (ecmwfState.timeIndex || 0);
+            let sIdx = stepSlider ? parseInt(stepSlider.value, 10) : (ecmwfState.stepIndex || 0);
+            if (!Number.isFinite(tIdx)) tIdx = 0;
+            if (!Number.isFinite(sIdx)) sIdx = 0;
+
+            const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
+            if (isWindVar && typeof requestEcmwfContours === 'function') {
+                requestEcmwfContours(tIdx, sIdx);
+            } else if (typeof renderEcmwfContourPlot === 'function') {
+                // Re-render scalar fields with new opacity when layer
+                // hasn't been created yet.
+                renderEcmwfContourPlot(tIdx, sIdx, opacity);
+            }
+        };
+
+        opacitySlider.addEventListener('input', applyOpacity);
+        opacitySlider.addEventListener('change', applyOpacity);
     }
 });

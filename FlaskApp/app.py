@@ -716,7 +716,7 @@ def _build_dpird_ui_meta():
     Shape matches the response from /upload and dpird_meta from /query so
     the frontend can call populateDpirdUi() with this payload.
     """
-    global ds
+    global ds, _dpird_dataset_id
     if ds is None:
         return None
 
@@ -742,10 +742,19 @@ def _build_dpird_ui_meta():
         time_vals.max().strftime('%Y-%m-%d')
     ]
 
+    # Derive a human-friendly source label (e.g. filename or Acacia id)
+    source_label = None
+    if _dpird_dataset_id:
+        if _dpird_dataset_id.startswith("acacia://"):
+            source_label = _dpird_dataset_id.split("/")[-1]
+        else:
+            source_label = os.path.basename(_dpird_dataset_id)
+
     return {
         "variables": display_vars,
         "stations": stations,
         "date_range": date_range,
+        "source_label": source_label,
     }
 
 
@@ -755,9 +764,17 @@ def _build_ecmwf_ui_meta():
     Shape matches ecmwf_meta from /query and the response from
     /ecmwf_upload so the frontend can call populateEcmwfUi().
     """
-    global ecmwf_ds, ecmwf_meta
+    global ecmwf_ds, ecmwf_meta, _ecmwf_dataset_id
     if ecmwf_ds is None or not ecmwf_meta:
         return None
+
+    # Derive a human-friendly source label for ECMWF
+    source_label = None
+    if _ecmwf_dataset_id:
+        if _ecmwf_dataset_id.startswith("acacia://"):
+            source_label = _ecmwf_dataset_id.split("/")[-1]
+        else:
+            source_label = os.path.basename(_ecmwf_dataset_id)
 
     return {
         "time_labels": ecmwf_meta["time_labels"],
@@ -767,6 +784,7 @@ def _build_ecmwf_ui_meta():
         "time_count": ecmwf_meta.get("time_count", 0),
         "step_count": ecmwf_meta.get("step_count", 0),
         "step_values": ecmwf_meta.get("step_values", []),
+        "source_label": source_label,
     }
 
 @app.route('/upload', methods=['POST'])
