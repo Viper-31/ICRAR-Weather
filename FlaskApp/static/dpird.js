@@ -9,6 +9,121 @@
 
 // Upload DPIRD NetCDF file and initialise config UI
 
+
+// DPIRD colormaps
+const DPIRD_CMAP_DEFS = {
+    airTemperature: {
+        scale: 'coolwarm',
+        gradient: 'linear-gradient(to top, #3b4cc0, #bcb8b7, #b40426)',
+        stops: [
+            { pos: 0.0, color: [59, 76, 192] },
+            { pos: 0.5, color: [188, 184, 183] },
+            { pos: 1.0, color: [180, 4, 38] }
+        ]
+    },
+    dewPoint: {
+        scale: 'coolwarm',
+        gradient: 'linear-gradient(to top, #3b4cc0, #bcb8b7, #b40426)',
+        stops: [
+            { pos: 0.0, color: [59, 76, 192] },
+            { pos: 0.5, color: [188, 184, 183] },
+            { pos: 1.0, color: [180, 4, 38] }
+        ]
+    },
+    relativeHumidity: {
+        scale: 'Blues',
+        gradient: 'linear-gradient(to top, #eff3ff, #6baed6, #08519c)',
+        stops: [
+            { pos: 0.0, color: [239, 243, 255] },
+            { pos: 0.5, color: [107, 174, 214] },
+            { pos: 1.0, color: [8, 81, 156] }
+        ]
+    },
+    wind_3m: {
+        scale: 'Plasma',
+        gradient: 'linear-gradient(to top, #0d0887, #cc4678, #f0f921)',
+        stops: [
+            { pos: 0.0, color: [13, 8, 135] },
+            { pos: 0.5, color: [204, 70, 120] },
+            { pos: 1.0, color: [240, 249, 33] }
+        ]
+    },
+    default: {
+        scale: 'Viridis',
+        gradient: 'linear-gradient(to top, #440154, #218f8d, #fde725)',
+        stops: [
+            { pos: 0.0, color: [68, 1, 84] },
+            { pos: 0.5, color: [33, 143, 141] },
+            { pos: 1.0, color: [253, 231, 37] }
+        ]
+    }
+};
+
+// Helper to get colormap definition for a DPIRD variable
+function getDpirdCmapDef(varName) {
+    return DPIRD_CMAP_DEFS[varName] || DPIRD_CMAP_DEFS.default;
+}
+
+// Linear interpolation helper
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
+// Clamp value to [0, 1]
+function clamp01(value) {
+    if (!Number.isFinite(value)) return 0;
+    if (value < 0) return 0;
+    if (value > 1) return 1;
+    return value;
+}
+
+// Sample a DPIRD colormap at a given position (0.0 to 1.0)
+function sampleDpirdColormap(pct, varName) {
+    const t = clamp01(pct);
+    const def = getDpirdCmapDef(varName);
+    const stops = def.stops;
+    
+    if (!Array.isArray(stops) || !stops.length) {
+        // Fallback: grayscale
+        const gray = Math.round(255 * t);
+        return `rgb(${gray}, ${gray}, ${gray})`;
+    }
+    
+    // Handle edge cases
+    if (t <= stops[0].pos) {
+        const c = stops[0].color;
+        return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+    }
+    if (t >= stops[stops.length - 1].pos) {
+        const c = stops[stops.length - 1].color;
+        return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+    }
+    
+    // Find surrounding stops and interpolate
+    for (let i = 0; i < stops.length - 1; i++) {
+        const a = stops[i];
+        const b = stops[i + 1];
+        if (t >= a.pos && t <= b.pos) {
+            const span = (b.pos - a.pos) || 1;
+            const localT = (t - a.pos) / span;
+            const r = lerp(a.color[0], b.color[0], localT);
+            const g = lerp(a.color[1], b.color[1], localT);
+            const bVal = lerp(a.color[2], b.color[2], localT);
+            return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(bVal)})`;
+        }
+    }
+}
+
+// Compute color for a scalar value using the DPIRD colormap
+function DpirdMissingColor(value, vMin, vMax, varName) {
+    if (!Number.isFinite(value) || vMin === null || vMax === null) {
+        return 'rgb(0, 0, 0)'; // Black for missing data
+    }
+    const range = (vMax - vMin) || 1;
+    const pct = clamp01((value - vMin) / range);
+    return sampleDpirdColormap(pct, varName);
+}
+
 // ---Shared UI Populator ---
 window.populateDpirdUi = function(data) {
     if (!data) return;
@@ -134,12 +249,12 @@ async function renderMap(varName) {
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(leafletMap);
         }
 
-        const theme = colorMaps[varName] || colorMaps['default'];
+        const cmapDef = getDpirdCmapDef(varName);
         const isCombinedWind = (varName === 'wind_3m');
         const isWindDeg = (varName === 'wind_3m_degN');
         const isWindSpeed = (varName === 'wind_3m_speed');
 
-        document.getElementById('color-bar').style.background = theme.gradient;
+        document.getElementById('color-bar').style.background = cmapDef.gradient;
         document.getElementById('max-val').innerText = d.v_max.toFixed(1);
         document.getElementById('min-val').innerText = d.v_min.toFixed(1);
 
@@ -164,7 +279,9 @@ async function renderMap(varName) {
                     angleVal = isWindDeg ? (Number.isFinite(raw) ? raw : 0) : null;
                 }
 
-                const { pct, color } = computeScalarColor(speedVal, d.v_min, d.v_max);
+                const color = DpirdMissingColor(speedVal, d.v_min, d.v_max, varName);
+                const range = (d.v_max - d.v_min) || 1;
+                const pct = clamp01((speedVal - d.v_min) / range);
 
                 const rotator = element.querySelector('.rotator');
                 if (rotator) {

@@ -368,9 +368,9 @@ function updateDpirdColorbar(vMin, vMax, varName, units, timeLabel) {
     if (timeEl) timeEl.textContent = timeLabel || '--';
     
     // Update gradient
-    if (colorBar) {
-        const theme = colorMaps[varName] || colorMaps['default'];
-        colorBar.style.background = theme.gradient;
+    if (colorBar && typeof getDpirdCmapDef === 'function') {
+        const cmapDef = getDpirdCmapDef(varName);
+        colorBar.style.background = cmapDef.gradient;
     }
 }
 
