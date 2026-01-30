@@ -74,21 +74,6 @@ WIND_LONG_NAMES = {
         'wind1000': 'Wind speed at 1000 hPa',
     }
 
-def _replace_nan(value):
-    if isinstance(value, float) and math.isnan(value):
-        return None
-    return value
-
-"""Add entry to cache with LRU eviction if full."""
-def _ecmwf_cache_set(key, value):
-    global _ecmwf_minmax_cache
-    if len(_ecmwf_minmax_cache) >= MAX_CACHE_SIZE_ecmwf:
-        oldest_key = next(iter(_ecmwf_minmax_cache))
-        del _ecmwf_minmax_cache[oldest_key]
-        print(f"⚠ Cache full, evicted: {oldest_key[0]} [{oldest_key[2]}:{oldest_key[3]}]")
-    _ecmwf_minmax_cache[key] = value
-
-
 def _serialize_frames(frames):
     """Convert NaNs to None for JSON safety.
 

@@ -218,7 +218,7 @@ const ecmwfState = {
     stepCount: 0,
     timeIndex: 0,
     stepIndex: 0,
-    useContours: false,
+    useContours: true,
     hasFitted: false,
     heatLayer: null,
     cmapName: 'viridis'
@@ -329,8 +329,6 @@ async function runEcmwfVisualization() {
     let sIdx = stepSlider ? parseInt(stepSlider.value, 10) : 0;
     if (!Number.isFinite(tIdx)) tIdx = 0;
     if (!Number.isFinite(sIdx)) sIdx = 0;
-    const contourToggle = document.getElementById('ecmwfContourToggle');
-    const useContours = contourToggle ? !!contourToggle.checked : false;
     const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
     // Wind variables are always shown as arrows on data points (no contour heatmap)
 
@@ -346,21 +344,12 @@ async function runEcmwfVisualization() {
         }
         await requestEcmwfContours(tIdx, sIdx);
     } else {
-        ecmwfState.useContours = useContours;
-        if (useContours) {
-            if (!leafletMap && ecmwfState.timeLabels.length) {
-                setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
-            }
-            await renderEcmwfContourPlot(tIdx, sIdx, opacity);
-        } else {
-            if (!leafletMap && ecmwfState.timeLabels.length) {
-                setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
-            }
-            if (ecmwfState.heatLayer && leafletMap && leafletMap.hasLayer(ecmwfState.heatLayer)) {
-                leafletMap.removeLayer(ecmwfState.heatLayer);
-            }
-            await requestEcmwfContours(tIdx, sIdx);
+        // For scalar variables, always render contours/heatmap (no toggle).
+        ecmwfState.useContours = true;
+        if (!leafletMap && ecmwfState.timeLabels.length) {
+            setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
         }
+        await renderEcmwfContourPlot(tIdx, sIdx, opacity);
     }
 
     // Reveal the ECMWF time/step controls only after a render
@@ -657,18 +646,6 @@ async function updateEcmwfConfigFromUi() {
             updateColorbarVisibility();
         }
 
-        // Hide contour/heatmap toggle for wind variables (always show arrows)
-        const viewModeCard = document.getElementById('ecmwfViewModeCard');
-        const contourToggle = document.getElementById('ecmwfContourToggle');
-        const isWindVar = typeof varName === 'string' && varName.startsWith('wind');
-        if (viewModeCard) {
-            viewModeCard.style.display = isWindVar ? 'none' : '';
-        }
-        if (contourToggle && isWindVar) {
-            contourToggle.checked = false;
-            ecmwfState.useContours = false;
-        }
-
         startSel.value = String(startGroup);
         endSel.value = String(endGroup);
         setLoading(false, 'ECMWF configuration ready. Click Render to draw.');
@@ -914,10 +891,13 @@ function setupEcmwfMap(meta, restore) {
             const tIdx = parseInt(e.target.value, 10);
             if (!Number.isFinite(tIdx)) return;
             const sIdx = (typeof ecmwfState.stepIndex === 'number') ? ecmwfState.stepIndex : 0;
-            if (ecmwfState.useContours) {
-                renderEcmwfContourPlot(tIdx, sIdx);
-            } else {
+            const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
+            if (isWindVar) {
+                // Wind variables: arrow markers (no heatmap)
                 requestEcmwfContours(tIdx, sIdx);
+            } else {
+                // Scalar variables: always render coloured contours/heatmap
+                renderEcmwfContourPlot(tIdx, sIdx);
             }
         };
     }
@@ -946,47 +926,26 @@ function setupEcmwfMap(meta, restore) {
             const sIdx = parseInt(e.target.value, 10);
             if (!Number.isFinite(sIdx)) return;
             const tIdx = (typeof ecmwfState.timeIndex === 'number') ? ecmwfState.timeIndex : 0;
-            if (ecmwfState.useContours) {
-                renderEcmwfContourPlot(tIdx, sIdx);
-            } else {
+            const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
+            if (isWindVar) {
+                // Wind variables: arrow markers (no heatmap)
                 requestEcmwfContours(tIdx, sIdx);
+            } else {
+                // Scalar variables: always render coloured contours/heatmap
+                renderEcmwfContourPlot(tIdx, sIdx);
             }
         };
     }
 
     const emptyState = document.getElementById('empty-state');
     if (emptyState) emptyState.style.display = 'none';
-
-    const viewModeCard = document.getElementById('ecmwfViewModeCard');
-    if (viewModeCard) viewModeCard.classList.remove('hidden');
 }
 
-// Hook the ECMWF contour toggle when the DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    const contourToggle = document.getElementById('ecmwfContourToggle');
-    if (contourToggle) {
-        contourToggle.addEventListener('change', (e) => {
-            ecmwfState.useContours = !!e.target.checked;
-            const timeSlider = document.getElementById('ecmwfTimeSlider');
-            const stepSlider = document.getElementById('ecmwfStepSlider');
-            let tIdx = timeSlider ? parseInt(timeSlider.value, 10) : (ecmwfState.timeIndex || 0);
-            let sIdx = stepSlider ? parseInt(stepSlider.value, 10) : (ecmwfState.stepIndex || 0);
-            if (!Number.isFinite(tIdx)) tIdx = 0;
-            if (!Number.isFinite(sIdx)) sIdx = 0;
-            if (ecmwfState.useContours) {
-                if (!leafletMap && ecmwfState.timeLabels.length) {
-                    setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
-                }
-                renderEcmwfContourPlot(tIdx, sIdx);
-            } else if (ecmwfState.timeLabels.length) {
-                if (!leafletMap) {
-                    setupEcmwfMap({ time_labels: ecmwfState.timeLabels }, true);
-                }
-                if (ecmwfState.heatLayer && leafletMap && leafletMap.hasLayer(ecmwfState.heatLayer)) {
-                    leafletMap.removeLayer(ecmwfState.heatLayer);
-                }
-                requestEcmwfContours(tIdx, sIdx);
-            }
-        });
+    // Hide the old "Show Contours" control; contours are now
+    // always shown for scalar ECMWF variables.
+    const viewModeCard = document.getElementById('ecmwfViewModeCard');
+    if (viewModeCard) {
+        viewModeCard.classList.add('hidden');
     }
 });

@@ -144,6 +144,73 @@ function maybeUpdateSharedDateRange() {
     }
 }
 
+// When in dual mode, keep ECMWF frame range in sync with
+// the shared DPIRD date configuration by adjusting the
+// ECMWF date-group selectors based on start/end dates.
+function syncEcmwfToDpirdDates() {
+    if (appMode !== 'dual' || !loadedDatasets.ecmwf) return;
+
+    const startInput = document.getElementById('startDate');
+    const endInput = document.getElementById('endDate');
+    const startVal = startInput ? startInput.value : '';
+    const endVal = endInput ? endInput.value : '';
+    if (!startVal || !endVal) return;
+
+    let start = new Date(`${startVal}T00:00:00Z`);
+    let end = new Date(`${endVal}T00:00:00Z`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
+    if (end < start) {
+        const tmp = start;
+        start = end;
+        end = tmp;
+    }
+
+    const dateLabels = Array.isArray(ecmwfState.dateLabels) ? ecmwfState.dateLabels : [];
+    if (!dateLabels.length) return;
+
+    const startSel = document.getElementById('ecmwfStartSelect');
+    const endSel = document.getElementById('ecmwfEndSelect');
+    if (!startSel || !endSel) return;
+
+    const parseDay = (dStr) => {
+        const d = new Date(`${dStr}T00:00:00Z`);
+        return Number.isNaN(d.getTime()) ? null : d;
+    };
+
+    let startGroup = 0;
+    let endGroup = dateLabels.length - 1;
+
+    for (let i = 0; i < dateLabels.length; i++) {
+        const d = parseDay(dateLabels[i]);
+        if (!d) continue;
+        if (d >= start) {
+            startGroup = i;
+            break;
+        }
+    }
+
+    for (let i = 0; i < dateLabels.length; i++) {
+        const d = parseDay(dateLabels[i]);
+        if (!d) continue;
+        if (d <= end) {
+            endGroup = i;
+        } else {
+            break;
+        }
+    }
+
+    if (endGroup < startGroup) {
+        endGroup = startGroup;
+    }
+
+    startSel.value = String(startGroup);
+    endSel.value = String(endGroup);
+
+    if (typeof updateEcmwfConfigFromUi === 'function') {
+        updateEcmwfConfigFromUi();
+    }
+}
+
 // Called by DPIRD/ECMWF UI populators when metadata is ready
 window.registerDpirdUiMeta = function(meta) {
     dpirdUiMeta = meta;
@@ -557,11 +624,20 @@ function attachConfigChangeHandlers() {
     const viewMode = document.getElementById('viewMode');
     
     if (startInput) {
-        startInput.addEventListener('change', validateDpirdConfig);
-        startInput.addEventListener('blur', validateDpirdConfig);
+        const handler = () => {
+            validateDpirdConfig();
+            if (appMode === 'dual') {
+                syncEcmwfToDpirdDates();
+            }
+        };
+        startInput.addEventListener('change', handler);
+        startInput.addEventListener('blur', handler);
         startInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 validateDpirdConfig();
+                if (appMode === 'dual') {
+                    syncEcmwfToDpirdDates();
+                }
                 const btn = document.getElementById('renderBtn');
                 if (btn && !btn.disabled) runVisualization();
             }
@@ -569,11 +645,20 @@ function attachConfigChangeHandlers() {
     }
     
     if (endInput) {
-        endInput.addEventListener('change', validateDpirdConfig);
-        endInput.addEventListener('blur', validateDpirdConfig);
+        const handler = () => {
+            validateDpirdConfig();
+            if (appMode === 'dual') {
+                syncEcmwfToDpirdDates();
+            }
+        };
+        endInput.addEventListener('change', handler);
+        endInput.addEventListener('blur', handler);
         endInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 validateDpirdConfig();
+                if (appMode === 'dual') {
+                    syncEcmwfToDpirdDates();
+                }
                 const btn = document.getElementById('renderBtn');
                 if (btn && !btn.disabled) runVisualization();
             }
@@ -988,16 +1073,7 @@ async function runDualVisualization() {
             await updateEcmwfConfigFromUi();
         }
         // Wind variable special handling
-        const contourToggle = document.getElementById('ecmwfContourToggle');
-        const viewModeCard = document.getElementById('ecmwfViewModeCard');
         const isWindVar = typeof ecmwfState.currentVar === 'string' && ecmwfState.currentVar.startsWith('wind');
-
-         if (viewModeCard) {
-            viewModeCard.style.display = isWindVar ? 'none' : '';
-        }
-        if (contourToggle && isWindVar) {
-            contourToggle.checked = false;
-        }
 
         const timeSlider = document.getElementById('ecmwfTimeSlider');
         const stepSlider = document.getElementById('ecmwfStepSlider');
@@ -1013,9 +1089,7 @@ async function runDualVisualization() {
             }
         }
         
-        // Render ECMWF layer (wind → arrows, scalar → check toggle)
-        const useContours = contourToggle ? !!contourToggle.checked : false;
-        
+        // Render ECMWF layer (wind → arrows, scalar → always contours)
         if (isWindVar) {
             ecmwfState.useContours = false;
             
@@ -1027,20 +1101,10 @@ async function runDualVisualization() {
                 await requestEcmwfContours(tIdx, sIdx);
             }
         } else {
-            ecmwfState.useContours = useContours;
-            
-            if (useContours) {
-                if (typeof renderEcmwfContourPlot === 'function') {
-                    await renderEcmwfContourPlot(tIdx, sIdx, ecmwfOpacity);
-                }
-            } else {
-                if (ecmwfState.heatLayer && leafletMap && leafletMap.hasLayer(ecmwfState.heatLayer)) {
-                    leafletMap.removeLayer(ecmwfState.heatLayer);
-                }
-                
-                if (typeof requestEcmwfContours === 'function') {
-                    await requestEcmwfContours(tIdx, sIdx);
-                }
+            // Scalar ECMWF variables: always render contour/heatmap (no dots)
+            ecmwfState.useContours = true;
+            if (typeof renderEcmwfContourPlot === 'function') {
+                await renderEcmwfContourPlot(tIdx, sIdx, ecmwfOpacity);
             }
         }
         
