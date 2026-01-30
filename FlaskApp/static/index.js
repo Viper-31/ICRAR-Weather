@@ -1,5 +1,7 @@
 let appMode = 'none'; // changed default
 const loadedDatasets = { dpird: false, ecmwf: false }; 
+let dpirdUiMeta = null;
+let ecmwfUiMeta = null;
 const dpirdViewState = {
     mode: null,          // 'map' or 'graph'
     varName: null,       // DPIRD logical variable (e.g. 'airTemperature' or 'wind_3m')
@@ -72,6 +74,86 @@ const DPIRD_ECMWF_VAR_MAP = {
 };
 
 let configListenersAttached = false;
+
+// --- Shared date range selection (DPIRD + ECMWF) ---
+function computeDpirdDateRangeFromMeta(meta) {
+    if (!meta || !Array.isArray(meta.date_range) || meta.date_range.length !== 2) return null;
+    const [startStr, endStr] = meta.date_range;
+    if (!startStr || !endStr) return null;
+    const start = new Date(`${startStr}T00:00:00Z`);
+    const end = new Date(`${endStr}T00:00:00Z`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    const rangeStart = start <= end ? start : end;
+    const rangeEnd = end >= start ? end : start;
+    return { start: rangeStart, end: rangeEnd };
+}
+
+function computeEcmwfDateRangeFromMeta(meta) {
+    if (!meta || !Array.isArray(meta.time_labels) || meta.time_labels.length === 0) return null;
+    const first = meta.time_labels[0];
+    const last = meta.time_labels[meta.time_labels.length - 1];
+    if (typeof first !== 'string' || typeof last !== 'string') return null;
+
+    function parseLabel(label) {
+        const parts = label.trim().split(/\s+/);
+        if (parts.length < 2) return null;
+        const iso = `${parts[0]}T${parts[1]}:00Z`;
+        const d = new Date(iso);
+        return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    const start = parseLabel(first);
+    const end = parseLabel(last);
+    if (!start || !end) return null;
+    const rangeStart = start <= end ? start : end;
+    const rangeEnd = end >= start ? end : start;
+    return { start: rangeStart, end: rangeEnd };
+}
+
+function maybeUpdateSharedDateRange() {
+    // Only adjust when both datasets are loaded
+    if (!loadedDatasets.dpird || !loadedDatasets.ecmwf) return;
+
+    const dpRange = computeDpirdDateRangeFromMeta(dpirdUiMeta);
+    const ecRange = computeEcmwfDateRangeFromMeta(ecmwfUiMeta);
+    if (!dpRange && !ecRange) return;
+
+    const startInput = document.getElementById('startDate');
+    const endInput = document.getElementById('endDate');
+    if (!startInput || !endInput) return;
+
+    let chosen = null;
+    if (dpRange && ecRange) {
+        const dpSpan = Math.max(0, dpRange.end.getTime() - dpRange.start.getTime());
+        const ecSpan = Math.max(0, ecRange.end.getTime() - ecRange.start.getTime());
+        chosen = dpSpan <= ecSpan ? dpRange : ecRange;
+    } else if (dpRange) {
+        chosen = dpRange;
+    } else {
+        chosen = ecRange;
+    }
+
+    if (!chosen) return;
+    const startIso = chosen.start.toISOString().slice(0, 10);
+    const endIso = chosen.end.toISOString().slice(0, 10);
+    startInput.value = startIso;
+    endInput.value = endIso;
+
+    if (typeof validateDpirdConfig === 'function') {
+        validateDpirdConfig();
+    }
+}
+
+// Called by DPIRD/ECMWF UI populators when metadata is ready
+window.registerDpirdUiMeta = function(meta) {
+    dpirdUiMeta = meta;
+    maybeUpdateSharedDateRange();
+};
+
+window.registerEcmwfUiMeta = function(meta) {
+    ecmwfUiMeta = meta;
+    maybeUpdateSharedDateRange();
+};
 
 function setLoading(isLoading, message) {
     const spinner = document.getElementById('spinner');

@@ -123,6 +123,10 @@ const ECMWF_CMAP_DEFS = {
 window.populateEcmwfUi = function(data) {
     if (!data) return;
 
+    if (window.registerEcmwfUiMeta) {
+        window.registerEcmwfUiMeta(data);
+    }
+
     // Update internal ECMWF state
     ecmwfState.timeLabels = Array.isArray(data.time_labels) ? data.time_labels : [];
     ecmwfState.stepValues = Array.isArray(data.step_values) ? data.step_values : [];

@@ -44,6 +44,10 @@ window.populateDpirdUi = function(data) {
     const configSection = document.getElementById('configSection');
     if (configSection) configSection.classList.remove('hidden');
 
+    if (window.registerDpirdUiMeta) {
+        window.registerDpirdUiMeta(data);
+    }
+
     attachVariableListeners();
     attachConfigChangeHandlers();
     validateDpirdConfig();
