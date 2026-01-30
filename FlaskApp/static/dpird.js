@@ -17,11 +17,12 @@ const DPIRD_VAR_CMAPS = {
     deltaT: 'RdBu_r',
     relativeHumidity: 'Blues',
     panEvaporation: 'YlGnBu',
-    evaporationTranspiration: 'YlGn',
+    evapotranspiration_shortCrop: 'YlGn',
+    evapotranspiration_tallCrop: 'YlGn',
     solarExposure: 'plasma',
     rainfall: 'Blues',
-    frostcondition: 'Blues',
-    heatcondition: 'Reds' 
+    frostCondition: 'Blues',
+    heatCondition: 'Reds' 
 };
 
 // DPIRD colormaps
@@ -35,16 +36,16 @@ const CMAP_DEFS = {
         ]
     },
     thermal: {
-        gradient: 'linear-gradient(to top, #2166ac, #4393c3, #92c5de, #d1e5f0, #fddbc7, #f4a582, #d6604d, #b2182b)',
+        gradient: 'linear-gradient(to top, #053061, #2166ac, #4393c3, #92c5de, #f4a582, #d6604d, #b2182b, #67001f)',
         stops: [
-            { pos: 0.00, color: [33, 102, 172] },    
-            { pos: 0.14, color: [67, 147, 195] },    
-            { pos: 0.29, color: [146, 197, 222] },   
-            { pos: 0.43, color: [209, 229, 240] },   
-            { pos: 0.57, color: [253, 219, 199] },   
-            { pos: 0.71, color: [244, 165, 130] },   
-            { pos: 0.86, color: [214, 96, 77] },    
-            { pos: 1.00, color: [178, 24, 43] }     
+            { pos: 0.00, color: [5, 48, 97] },       
+            { pos: 0.14, color: [33, 102, 172] },    
+            { pos: 0.29, color: [67, 147, 195] },    
+            { pos: 0.43, color: [146, 197, 222] },   
+            { pos: 0.57, color: [244, 165, 130] },   
+            { pos: 0.71, color: [214, 96, 77] },     
+            { pos: 0.86, color: [178, 24, 43] },     
+            { pos: 1.00, color: [103, 0, 31] }    
         ]
     },
     plasma: {
@@ -72,19 +73,19 @@ const CMAP_DEFS = {
         ]
     },
     YlGnBu: {
-        gradient: 'linear-gradient(to top, #ffffd9, #41b6c4, #081d58)',
+        gradient: 'linear-gradient(to top, #78c679, #41b6c4, #225ea8)',
         stops: [
-            { pos: 0.0, color: [255, 255, 217] },
-            { pos: 0.5, color: [65, 182, 196] },
-            { pos: 1.0, color: [8, 29, 88] }
+            { pos: 0.0, color: [120, 198, 121] },   
+            { pos: 0.5, color: [65, 182, 196] },    
+            { pos: 1.0, color: [34, 94, 168] }      
         ]
     },
     Purples: {
-        gradient: 'linear-gradient(to top, #f2f0f7, #9e9ac8, #3f007d)',
+        gradient: 'linear-gradient(to top, #bcbddc, #9e9ac8, #54278f)',
         stops: [
-            { pos: 0.0, color: [242, 240, 247] },
-            { pos: 0.5, color: [158, 154, 200] },
-            { pos: 1.0, color: [63, 0, 125] }
+            { pos: 0.0, color: [188, 189, 220] },    
+            { pos: 0.5, color: [158, 154, 200] },   
+            { pos: 1.0, color: [84, 39, 143] }       
         ]
     },
     Blues: {
