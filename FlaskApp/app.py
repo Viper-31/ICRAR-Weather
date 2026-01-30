@@ -796,7 +796,7 @@ def upload_file():
         # time dimension when available, but fall back cleanly if that
         # environment is not present.
         try:
-            ds = xr.open_dataset(filepath, chunks={"time": 4096})
+            ds = xr.open_dataset(filepath, engine= 'h5netcdf', chunks={"time": 4096})
         except Exception:
             ds = xr.open_dataset(filepath)
 
@@ -1310,7 +1310,7 @@ def preload_default_datasets():
     if os.path.exists(dpird_path):
         try:
             try:
-                ds_local = xr.open_dataset(dpird_path, chunks={"time": 4096})
+                ds_local = xr.open_dataset(dpird_path, engine='h5netcdf', chunks={"time": 4096})
             except Exception:
                 ds_local = xr.open_dataset(dpird_path)
 
