@@ -285,8 +285,6 @@ async function uploadEcmwfFile() {
 
         // Update Global State
         loadedDatasets.ecmwf = true;
-
-        // --- CHANGED: Use the helper ---
         window.populateEcmwfUi(data);
 
         // Update Switcher
