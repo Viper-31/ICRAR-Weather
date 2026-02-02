@@ -365,7 +365,7 @@ async function renderMap(varName) {
                 }
 
                 const color = (isCombinedWind || isWindDeg || isWindSpeed)
-                    ? 'rgb(0, 0, 0)'  // Monochrome black for all wind arrows
+                    ? 'rgb(0, 83, 172)'  // Blue for wind arrows
                     : computeDpirdColor(speedVal, d.v_min, d.v_max, varName);
                 const range = (d.v_max - d.v_min) || 1;
                 const pct = clamp01((speedVal - d.v_min) / range);
