@@ -12,7 +12,7 @@
 const DPIRD_VAR_CMAPS = {
     airTemperature: 'thermal',
     apparentAirTemperature: 'thermal',
-    dewPoint: 'thermal',
+    dewPoint: 'coolwarm',
     wetBulb: 'thermal',
     deltaT: 'RdBu_r',
     relativeHumidity: 'Blues',

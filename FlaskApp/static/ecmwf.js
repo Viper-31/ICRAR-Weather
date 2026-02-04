@@ -2,7 +2,7 @@
 
 // Colormap mappings (approximate equivalents of the Python mappings)
 const ECMWF_VAR_CMAPS = {
-    t2m: 'coolwarm',
+    t2m: 'thermal',
     d2m: 'coolwarm',
     msl: 'viridis',
     sh2: 'GnBu',
@@ -33,6 +33,19 @@ const ECMWF_CMAP_DEFS = {
             { pos: 0.0, color: [59, 76, 192] },
             { pos: 0.5, color: [188, 184, 183] },
             { pos: 1.0, color: [180, 4, 38] }
+        ]
+    },
+    thermal: {
+        gradient: 'linear-gradient(to top, #053061, #2166ac, #4393c3, #92c5de, #f4a582, #d6604d, #b2182b, #67001f)',
+        stops: [
+            { pos: 0.00, color: [5, 48, 97] },       
+            { pos: 0.14, color: [33, 102, 172] },    
+            { pos: 0.29, color: [67, 147, 195] },    
+            { pos: 0.43, color: [146, 197, 222] },   
+            { pos: 0.57, color: [244, 165, 130] },   
+            { pos: 0.71, color: [214, 96, 77] },     
+            { pos: 0.86, color: [178, 24, 43] },     
+            { pos: 1.00, color: [103, 0, 31] }    
         ]
     },
     GnBu: {
