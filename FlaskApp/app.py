@@ -931,7 +931,7 @@ def ecmwf_upload():
     Stores the dataset in memory and returns metadata needed for
     contour visualisation (time labels and global min/max).
     """
-    global ecmwf_ds
+    global ecmwf_ds, _ecmwf_dataset_id, _ecmwf_minmax_cache
     try:
         file = request.files['file']
         filepath = os.path.join(UPLOAD_FOLDER, file.filename)
@@ -941,6 +941,13 @@ def ecmwf_upload():
             ecmwf_ds = xr.open_dataset(filepath,  engine='h5netcdf', chunks={})
         except Exception:
             ecmwf_ds = xr.open_dataset(filepath)
+
+        # Track the current ECMWF dataset id (used to derive source_label
+        # for the UI) and reset any cached min/max entries when a new
+        # file is uploaded.
+        _ecmwf_dataset_id = filepath
+        _ecmwf_minmax_cache = {}
+
         _init_ecmwf_metadata(ecmwf_ds)
 
         ui_meta = _build_ecmwf_ui_meta()

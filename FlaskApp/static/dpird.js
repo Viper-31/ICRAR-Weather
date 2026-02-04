@@ -231,6 +231,9 @@ window.populateDpirdUi = function(data) {
         endInput.value = data.date_range[1];
     }
 
+    console.log('DPIRD dataset:', data);
+    console.log('DPIRD dataset loaded:', data.source_label);
+
     // Show which DPIRD file/dataset is currently loaded (including preloads)
     const dpirdInfo = document.getElementById('dpirdUploadInfo');
     if (dpirdInfo && data.source_label) {

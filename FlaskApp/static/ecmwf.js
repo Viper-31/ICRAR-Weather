@@ -114,6 +114,7 @@ window.populateEcmwfUi = function(data) {
     if (ecmwfInfo && data.source_label) {
         ecmwfInfo.textContent = `Loaded: ${data.source_label}`;
     }
+    console.log("dfhadslfhadsjk", ecmwfInfo.textContent);
 
     // Update internal ECMWF state
     ecmwfState.timeLabels = Array.isArray(data.time_labels) ? data.time_labels : [];
@@ -271,13 +272,21 @@ function formatEcmwfValidTime(timeIndex, stepIndex) {
 
 async function uploadEcmwfFile() {
     const input = document.getElementById('ecmwfFileInput');
+    const uploadBtn = document.getElementById('ecmwfUploadBtn');
     if (!input || !input.files || !input.files[0]) return;
+
+    console.log('input', input.files[0]);
 
     const file = input.files[0];
     setLoading(true, `Loading ECMWF file: ${file.name}...`);
     
+    // Disable controls while upload is in progress
+    input.disabled = true;
+    if (uploadBtn) uploadBtn.disabled = true;
+    setLoading(true, `Processing ${input.files[0].name}...`);
+
     const fd = new FormData();
-    fd.append('file', file);
+    fd.append('file', input.files[0]);
     try {
         const res = await fetch('/ecmwf_upload', { method: 'POST', body: fd });
         const data = await res.json();
@@ -285,6 +294,8 @@ async function uploadEcmwfFile() {
 
         // Update Global State
         loadedDatasets.ecmwf = true;
+        console.log('ECMWF dataset:', data);
+        console.log('ECMWF dataset loaded:', data.source_label);
         window.populateEcmwfUi(data);
 
         // Update Switcher
@@ -294,6 +305,10 @@ async function uploadEcmwfFile() {
     } catch (err) {
         console.error(err);
         setLoading(false, `ECMWF error: ${err.message}`);
+    } finally {
+        // Re-enable controls after upload completes or fails
+        input.disabled = false;
+        if (uploadBtn) uploadBtn.disabled = false;
     }
 }
 
