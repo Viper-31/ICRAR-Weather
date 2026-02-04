@@ -114,7 +114,6 @@ window.populateEcmwfUi = function(data) {
     if (ecmwfInfo && data.source_label) {
         ecmwfInfo.textContent = `Loaded: ${data.source_label}`;
     }
-    console.log("dfhadslfhadsjk", ecmwfInfo.textContent);
 
     // Update internal ECMWF state
     ecmwfState.timeLabels = Array.isArray(data.time_labels) ? data.time_labels : [];
