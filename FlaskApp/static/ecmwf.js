@@ -432,9 +432,9 @@ async function renderEcmwfContourPlot(timeIndex, stepIndex, opacity) {
                 const activeVar = document.getElementById('active-var');
                 const activeUnits = document.getElementById('active-units');
                 const activeTime = document.getElementById('active-time');
-                const coolwarmDef = getEcmwfCmapDef('coolwarm');
-                
-                if (colorBar) colorBar.style.background = coolwarmDef.gradient;
+                const cmapDef = getEcmwfCmapDef(ecmwfState.cmapName || 'viridis');
+
+                if (colorBar) colorBar.style.background = cmapDef.gradient;
                 if (maxValEl) maxValEl.innerText = ecmwfState.vMax.toFixed(1);
                 if (minValEl) minValEl.innerText = ecmwfState.vMin.toFixed(1);
                 if (activeVar) activeVar.innerText = ecmwfState.longName || ecmwfState.currentVar;
@@ -630,15 +630,16 @@ async function updateEcmwfConfigFromUi() {
         } else if (appMode === 'dual') {
             // Dual mode - update ECMWF colorbar
             if (shouldUseSharedColorbar()) {
-                // Use shared colorbar (DPIRD element with coolwarm)
+                // Use shared colorbar
                 const colorBar = document.getElementById('color-bar');
                 const maxValEl = document.getElementById('max-val');
                 const minValEl = document.getElementById('min-val');
                 const activeVar = document.getElementById('active-var');
                 const activeUnits = document.getElementById('active-units')
                 const dpirdColorbarHeader = document.getElementById('dpird-colorbar-header');
-                
-                if (colorBar) colorBar.style.background = coolwarmDef.gradient;
+                const cmapDef = getEcmwfCmapDef(ecmwfState.cmapName || 'viridis');
+
+                if (colorBar) colorBar.style.background = cmapDef.gradient;
                 if (maxValEl) maxValEl.innerText = ecmwfState.vMax.toFixed(1);
                 if (minValEl) minValEl.innerText = ecmwfState.vMin.toFixed(1);
                 if (activeVar) activeVar.innerText = `${ecmwfState.longName} / ${varName}`;
