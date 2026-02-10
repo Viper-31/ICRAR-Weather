@@ -122,7 +122,7 @@ def _ecmwf_group_wind_vars(raw_vars):
         else:
             display_list.append(u_name)
             var_map[u_name] = {"kind": "scalar", "var": u_name}
-            processed.add(u_name)
+            processed.add(u_name)r
 
     for name in raw_vars:
         if name in processed:
