@@ -1,0 +1,12 @@
+sources:
+  - name: ecmwf
+    zip_dir: ecmwf_zip/ecmwf
+    out_dir: data/ecmwf_untar/ecmwf
+
+  - name: ecmwf_extra1
+    zip_dir: ecmwf_zip/ecmwf_extra1
+    out_dir: data/ecmwf_untar/ecmwf_extra1
+
+  - name: ecmwf_extra2
+    zip_dir: ecmwf_zip/ecmwf_extra2
+    out_dir: data/ecmwf_untar/ecmwf_extra2

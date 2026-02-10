@@ -1,0 +1,61 @@
+preprocess: true
+
+untar_ecmwf_dir: /scratch/pawsey0411/jchew/data/ecmwf_op_unzip
+processed_data_dir: /scratch/pawsey0411/jchew/clean_data/
+destination_folder: ecmwf_op
+max_workers: 4
+
+unit_conversions:
+  temp_vars: [t2m, d2m, t]     # K -> C
+  pressure_vars: [msl, sp]     # Pa -> hPa
+  wind_vars: [u10, v10, i10fg, u, v] # m/s -> km/h
+  precip_vars: [tp, cp, lsp]   # m -> mm
+  
+sources:
+  ecmwf:
+    
+    vars:
+      - t2m #2m_temperature K -> C
+      - d2m #2m_dewpoint_temperature K-> C
+      - msl #Mean seal level pressure Pa -> hPa
+      - tcc #total_cloud_cover 
+      - lcc #low_cloud_cover 
+      - i10fg #	Instantaneous 10 metre wind gust m/s -> km/h
+      - u10 #10m_u_component_of_wind m/s -> km/h
+      - v10 #10m_v_component_of_wind m/s -> km/h
+      - cp #convective_precipitation m -> mm
+      - lsp #large_scale_precipitation m -> mm
+      - tp #total_precipitation m -> mm
+      - swvl1 #Volumetric soil water layer 1
+      - sh2 # 2m specfic humidity
+
+      - t250 #airTemperature 
+      - t500
+      - t850
+      - t1000
+      
+      - z250 #geopotential
+      - z500
+      - z850
+      - z1000
+      
+      - q250 #specific_humidity
+      - q500
+      - q850
+      - q1000
+      
+      - w250 #vertical_velocity
+      - w500
+      - w850
+      - w1000
+      
+      - u250 #u component of wind m/s -> km/h
+      - u500
+      - u850
+      - u1000
+      
+      - v250 #v component of wind m/s -> km/h
+      - v500
+      - v850
+      - v1000
+      
