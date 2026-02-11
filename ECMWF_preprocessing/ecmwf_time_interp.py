@@ -100,7 +100,7 @@ def process_month(current_file, next_file, cfg):
         else:
             out_vars[var]= ds[var].reindex({time_dim:new_time}, method="ffill")
         
-    #Saving ouput
+    #Saving output
     ds_out= xr.Dataset(
         data_vars=out_vars,
         coords={
