@@ -19,7 +19,6 @@ Clean ECMWF (ERA5-style) preprocessing:
 import os, sys, yaml, glob
 from pathlib import Path
 import numpy as np
-import pandas as pd
 import xarray as xr
 
 # ----------------------------
