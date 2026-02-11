@@ -114,7 +114,7 @@ def process_month(current_file, next_file, cfg):
     outfile.parent.mkdir(parents=True,exist_ok=True)
     ds_out.to_netcdf(outfile, engine="netcdf4")
 
-    print(f"Sucessfully saved to {outfile}")
+    print(f"Successfully saved to {outfile}")
 
     ds_curr.close() 
     if next_file: ds_next.close()
