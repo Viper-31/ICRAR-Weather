@@ -19,7 +19,6 @@
 # 15_min_precip= hourly_precip/4
 # ---------------------
 import xarray as xr
-import numpy as np
 import pandas as pd
 import yaml, sys
 from pathlib import Path
