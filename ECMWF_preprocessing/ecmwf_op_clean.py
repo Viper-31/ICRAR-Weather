@@ -13,7 +13,7 @@ Clean ECMWF Operational (Forecast) preprocessing:
 
 """
 
-import os, sys, yaml, re
+import sys, yaml, re
 from pathlib import Path
 import numpy as np
 import xarray as xr
