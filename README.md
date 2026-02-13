@@ -17,7 +17,6 @@ The UI lets you:
 1. Create and activate a Python environment (recommended):
 
 	```bash
-	cd FlaskApp
 	python -m venv .venv
 	source .venv/bin/activate  # on macOS/Linux
 	```
@@ -32,10 +31,27 @@ The UI lets you:
 
 	```bash
 	cd FlaskApp
+ 	cd services
+
+	# Just create a new file called app_config.yaml either via nano or via a GUI
+ 
+ 	nano app_config.yaml # on macOS/Linux
+
+ 	```
+	Enter the following text in the file: (required for accessing dataset from Acacia)
+
+	```
+	 key:
+	  ACCESS-KEY: ""
+	  SECRET-KEY: ""
+ 	```
+
+	Run the app!
+	```
 	python app.py
 	```
 
-4. Open the app in a browser:
+5. Open the app in a browser:
 
 	- Navigate to http://127.0.0.1:5000/ (or the host/port shown in the terminal).
 
