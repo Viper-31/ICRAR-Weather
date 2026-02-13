@@ -1,0 +1,16 @@
+#Pawsey run
+input_base: clean_data/ecmwf-reanalysis
+output_base: clean_data/ecmwf-interpolated
+
+#Dry run
+#input_base: dataset_ecmwf_clean_test/2023-v5
+#output_base: dataset_ecmwf_clean_test/2023-v5-interp-local
+
+PCHIP_VARS: ["t2m", "d2m", "sp", "msl",
+            "q500", "q850", "q1000",
+            "r500", "r850", "r1000"]
+ 
+LINEAR_VARS: ["u10", "v10"]
+
+PRECIP_VARS: ["tp","cp","lsp"] #Apply uniform redistribution. precip_15m= precip_hour/4
+
